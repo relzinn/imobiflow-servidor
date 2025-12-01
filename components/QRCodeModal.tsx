@@ -9,7 +9,7 @@ interface QRCodeModalProps {
   serverUrl?: string;
 }
 
-export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onConnected, serverUrl = 'https://imobiflow-bot.onrender.com' }) => {
+export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onConnected, serverUrl = 'http://localhost:3001' }) => {
   const [qrCodeImage, setQrCodeImage] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'qr' | 'success' | 'error'>('loading');
   const [retryCount, setRetryCount] = useState(0);

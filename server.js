@@ -43,7 +43,7 @@ const client = new Client({
 
 client.on('qr', (qr) => {
     console.log('📱 QR Code recebido! Escaneie agora.');
-    // Gera no terminal para facilitar
+    // Gera no terminal para facilitar (aparece nos logs do Render)
     qrcodeTerminal.generate(qr, { small: true });
     
     // Gera imagem para o site
@@ -69,6 +69,7 @@ client.on('authenticated', () => {
 client.on('auth_failure', msg => {
     console.error('❌ Falha na autenticação:', msg);
     clientStatus = 'error';
+    // Não reinicia automaticamente em falha de auth para evitar banimento ou loop
 });
 
 client.on('disconnected', async (reason) => {
@@ -76,19 +77,20 @@ client.on('disconnected', async (reason) => {
     isReady = false;
     clientStatus = 'disconnected';
     
-    // Lógica Anti-Loop:
-    // Destrói a instância atual para limpar memória e processos travados
+    // LÓGICA ANTI-LOOP DE REINICIALIZAÇÃO
+    // 1. Destrói a instância atual para limpar memória e processos travados
     try {
         await client.destroy();
     } catch (e) {
-        console.error('Erro ao destruir cliente:', e);
+        console.error('Erro ao destruir cliente (pode ser normal se já caiu):', e);
     }
 
-    // Espera 5 segundos antes de tentar reconectar
-    console.log('🔄 Reiniciando em 5 segundos...');
+    // 2. Espera 5 segundos antes de tentar reconectar (respirar)
+    console.log('🔄 Reiniciando sistema em 10 segundos...');
     setTimeout(() => {
-        client.initialize();
-    }, 5000);
+        console.log('🚀 Tentando inicializar novamente...');
+        client.initialize().catch(e => console.error("Falha ao reinicializar:", e));
+    }, 10000); // 10 segundos de delay
 });
 
 // ESCUTA MENSAGENS RECEBIDAS
@@ -97,6 +99,7 @@ client.on('message', async msg => {
         const fromNumber = msg.from.replace('@c.us', '');
         console.log(`[🔔 NOTIFICAÇÃO] Mensagem recebida de: ${fromNumber}`);
         
+        // Armazena apenas que houve interação, sem o conteúdo (privacidade/segurança)
         incomingActivity[fromNumber] = {
             timestamp: Date.now(),
             body: "Nova mensagem recebida. Verifique o WhatsApp."
@@ -154,8 +157,9 @@ app.get('/scan', (req, res) => {
         return res.send(`
             <div style="font-family: sans-serif; text-align: center; padding: 50px;">
                 <h1>Iniciando... ⏳</h1>
-                <p>Aguarde o QR Code ser gerado (pode levar até 20s na primeira vez)...</p>
-                <script>setTimeout(() => window.location.reload(), 3000);</script>
+                <p>Aguarde o QR Code ser gerado (pode levar até 20-30s na primeira vez)...</p>
+                <p>Status atual: ${clientStatus}</p>
+                <script>setTimeout(() => window.location.reload(), 5000);</script>
             </div>
         `);
     }
@@ -164,6 +168,8 @@ app.get('/scan', (req, res) => {
             <h1>Escaneie para Conectar</h1>
             <img src="${qrCodeData}" style="width: 300px; height: 300px; border: 1px solid #ccc;" />
             <p>Abra o WhatsApp > Aparelhos Conectados > Conectar Aparelho</p>
+            <p>Se já conectou, aguarde a atualização...</p>
+            <script>setTimeout(() => window.location.reload(), 5000);</script>
         </div>
     `);
 });

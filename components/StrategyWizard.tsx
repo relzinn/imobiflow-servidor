@@ -19,8 +19,8 @@ export const StrategyWizard: React.FC<StrategyWizardProps> = ({ onComplete }) =>
 
   // Integration Settings
   const [integrationMode, setIntegrationMode] = React.useState<'browser' | 'server'>('browser');
-  // Default to the user's deployed Render URL
-  const [serverUrl, setServerUrl] = React.useState('https://imobiflow-bot.onrender.com');
+  // Default to Localhost for local development
+  const [serverUrl, setServerUrl] = React.useState('http://localhost:3001');
 
   // Connection states
   const [waMode, setWaMode] = React.useState<'web' | 'app'>('web'); // For browser mode
@@ -215,9 +215,9 @@ export const StrategyWizard: React.FC<StrategyWizardProps> = ({ onComplete }) =>
                     <div className="flex-1">
                       <div className="font-bold text-gray-800 flex items-center gap-2">
                          Modo Automação (API)
-                         <span className="bg-emerald-200 text-emerald-900 text-[10px] px-2 rounded-full uppercase">Online</span>
+                         <span className="bg-emerald-200 text-emerald-900 text-[10px] px-2 rounded-full uppercase">Local</span>
                       </div>
-                      <p className="text-xs text-gray-500 mt-1">Conecta ao seu servidor no <b>Render</b>. Envio totalmente automático.</p>
+                      <p className="text-xs text-gray-500 mt-1">Conecta ao seu servidor local (server.js). Envio automático.</p>
                     </div>
                   </div>
 
@@ -228,7 +228,7 @@ export const StrategyWizard: React.FC<StrategyWizardProps> = ({ onComplete }) =>
                           type="url"
                           value={serverUrl}
                           onChange={(e) => setServerUrl(e.target.value)}
-                          placeholder="https://seu-app.onrender.com"
+                          placeholder="http://localhost:3001"
                           className="w-full p-2 border border-emerald-300 rounded bg-white text-sm"
                         />
                         <button 

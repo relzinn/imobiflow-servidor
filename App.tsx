@@ -58,6 +58,7 @@ const App: React.FC = () => {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isSendingServer, setIsSendingServer] = useState(false);
   const [serverStatus, setServerStatus] = useState<boolean>(false);
+  const [lastServerCheck, setLastServerCheck] = useState<string>('-');
 
   // AUTOMATION STATE
   const [autoPilot, setAutoPilot] = useState(false);
@@ -115,66 +116,99 @@ const App: React.FC = () => {
 
   // --- AUTOMATION ENGINE ---
 
-  // 1. Check Server & Replies (Runs regardless of AutoPilot)
-  useEffect(() => {
-    if (settings?.integrationMode !== 'server') return;
+  // Helper function to match phones (handles 55 prefix, 9 digit issue)
+  const arePhonesCompatible = (phoneA: string, phoneB: string): boolean => {
+      // 1. Clean both phones (only numbers)
+      const cleanA = phoneA.replace(/\D/g, '');
+      const cleanB = phoneB.replace(/\D/g, '');
+      
+      // 2. If exact match, return true
+      if (cleanA === cleanB) return true;
+      
+      // 3. Check if one ends with the other (handles DDI 55 or DDD missing)
+      // e.g. 5511999998888 ends with 11999998888
+      // e.g. 5511999998888 ends with 999998888
+      if (cleanA.length > cleanB.length) return cleanA.endsWith(cleanB);
+      if (cleanB.length > cleanA.length) return cleanB.endsWith(cleanA);
+      
+      return false;
+  };
 
-    const syncServer = async () => {
-        try {
-            // Fallback to Render URL if not specified
-            const url = settings.serverUrl || 'https://imobiflow-bot.onrender.com';
-            
-            // Check Status
-            const statusRes = await fetch(`${url}/status`);
-            const statusData = await statusRes.json();
-            setServerStatus(statusData.isReady);
+  const syncServer = async () => {
+    if (!settings || settings.integrationMode !== 'server') return;
 
-            if (statusData.isReady) {
-                 // Check Replies
-                 const activityRes = await fetch(`${url}/activity`);
-                 // Expected: { "5511...": { timestamp: 12345, body: "msg text" } }
-                 const activityData: Record<string, any> = await activityRes.json();
+    try {
+        // Fallback to Localhost
+        const url = settings.serverUrl || 'http://localhost:3001';
+        
+        // Check Status
+        const statusRes = await fetch(`${url}/status`);
+        const statusData = await statusRes.json();
+        setServerStatus(statusData.isReady);
+        setLastServerCheck(new Date().toLocaleTimeString());
+
+        if (statusData.isReady) {
+             // Check Replies
+             const activityRes = await fetch(`${url}/activity`);
+             const activityData: Record<string, any> = await activityRes.json();
+             
+             // Iterate through INCOMING messages first to find owners
+             const entries = Object.entries(activityData);
+             
+             if (entries.length === 0) return;
+
+             setContacts(prevContacts => {
+                 let hasChanges = false;
                  
-                 setContacts(prevContacts => {
-                     let hasChanges = false;
-                     const newContacts = prevContacts.map(c => {
-                         const cleanPhone = c.phone.replace(/\D/g, '');
-                         // Try exact match or with/without 55
-                         const data = activityData[cleanPhone] || 
-                                      activityData['55' + cleanPhone] || 
-                                      activityData[cleanPhone.replace(/^55/, '')];
-                         
-                         // Validar se dados existem e não são vazios
-                         if (!data || !data.body || data.body.trim() === '') return c;
+                 // Create a copy
+                 const newContacts = [...prevContacts];
 
+                 // For each incoming message, find the contact
+                 entries.forEach(([senderPhone, data]) => {
+                     if (!data || !data.body || data.body.trim() === '') return;
+                     
+                     // Find contact that matches this sender phone
+                     const contactIndex = newContacts.findIndex(c => arePhonesCompatible(c.phone, senderPhone));
+                     
+                     if (contactIndex !== -1) {
+                         const c = newContacts[contactIndex];
                          const serverMsgTime = data.timestamp || 0;
-                         // Usar texto genérico para a interface
                          const serverMsgBody = "Nova mensagem recebida. Verifique o WhatsApp.";
                          const localLastMsgTime = c.lastReplyTimestamp || 0;
 
-                         // NOVA LÓGICA: Se o timestamp da mensagem no servidor for MAIOR que o que temos guardado
+                         // If NEW message
                          if (serverMsgTime > localLastMsgTime) {
                              hasChanges = true;
                              addLog(`💬 Notificação de resposta de ${c.name}`);
-                             return {
+                             
+                             // Update the contact in the copy array
+                             newContacts[contactIndex] = {
                                  ...c,
                                  lastContactDate: new Date(serverMsgTime).toISOString(),
                                  automationStage: AutomationStage.IDLE,
                                  lastAutomatedMsgDate: undefined,
                                  lastReplyContent: serverMsgBody,
                                  lastReplyTimestamp: serverMsgTime,
-                                 hasUnreadReply: true // MARCA COMO NÃO LIDA
+                                 hasUnreadReply: true 
                              };
                          }
-                         return c;
-                     });
-                     return hasChanges ? newContacts : prevContacts;
+                     } else {
+                         // Optional: Log unassigned message
+                         // console.log("Message from unknown number:", senderPhone);
+                     }
                  });
-            }
-        } catch (e) {
-            setServerStatus(false);
+
+                 return hasChanges ? newContacts : prevContacts;
+             });
         }
-    };
+    } catch (e) {
+        setServerStatus(false);
+    }
+  };
+
+  // 1. Check Server & Replies (Runs regardless of AutoPilot)
+  useEffect(() => {
+    if (settings?.integrationMode !== 'server') return;
 
     const interval = setInterval(syncServer, 5000); // Sync a cada 5s
     return () => clearInterval(interval);
@@ -296,7 +330,7 @@ const App: React.FC = () => {
   };
 
   const sendViaServer = async (phone: string, message: string): Promise<boolean> => {
-      const url = settings?.serverUrl || 'https://imobiflow-bot.onrender.com';
+      const url = settings?.serverUrl || 'http://localhost:3001';
       try {
           const res = await fetch(`${url}/send`, {
               method: 'POST',
@@ -601,13 +635,21 @@ const App: React.FC = () => {
                     <span className="text-yellow-500 text-xs">Manual</span>
                 )}
               </div>
+              {settings.integrationMode === 'server' && (
+                  <div className="flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-700 pt-2">
+                      <span>Último sync: {lastServerCheck}</span>
+                      <button onClick={syncServer} className="text-blue-400 hover:text-white hover:underline">
+                          <Icons.Refresh />
+                      </button>
+                  </div>
+              )}
             </div>
             
             {/* Button to Clear Server Cache for Debugging */}
             {settings.integrationMode === 'server' && (
                 <button 
                   onClick={async () => {
-                     const url = settings.serverUrl || 'https://imobiflow-bot.onrender.com';
+                     const url = settings.serverUrl || 'http://localhost:3001';
                      await fetch(`${url}/clear`); // Assume endpoint created previously
                      setToast({message: "Memória do servidor limpa", type: 'success'});
                   }}
