@@ -17,11 +17,13 @@ let isReady = false;
 let clientStatus = 'initializing';
 
 // Cache de últimas mensagens recebidas
-// Agora armazena objeto: { timestamp: number, body: string }
 const incomingActivity = {};
 
+// Configuração robusta do Cliente
 const client = new Client({
-    authStrategy: new LocalAuth(),
+    authStrategy: new LocalAuth({
+        clientId: "imobiflow-session"
+    }),
     puppeteer: {
         headless: true,
         args: [
@@ -37,9 +39,14 @@ const client = new Client({
     }
 });
 
+// --- EVENTOS DO CLIENTE ---
+
 client.on('qr', (qr) => {
-    console.log('QR Code recebido! (Scan necessário)');
+    console.log('📱 QR Code recebido! Escaneie agora.');
+    // Gera no terminal para facilitar
     qrcodeTerminal.generate(qr, { small: true });
+    
+    // Gera imagem para o site
     qrcode.toDataURL(qr, (err, url) => {
         qrCodeData = url;
         clientStatus = 'qr_ready';
@@ -47,50 +54,77 @@ client.on('qr', (qr) => {
 });
 
 client.on('ready', () => {
-    console.log('WhatsApp Conectado e Pronto!');
+    console.log('✅ WhatsApp Conectado e Pronto!');
     isReady = true;
     clientStatus = 'ready';
     qrCodeData = null;
 });
 
 client.on('authenticated', () => {
-    console.log('Sessão Autenticada!');
+    console.log('🔑 Sessão Autenticada com sucesso!');
     clientStatus = 'authenticated';
+    qrCodeData = null;
 });
 
-client.on('disconnected', (reason) => {
-    console.log('WhatsApp desconectado:', reason);
+client.on('auth_failure', msg => {
+    console.error('❌ Falha na autenticação:', msg);
+    clientStatus = 'error';
+});
+
+client.on('disconnected', async (reason) => {
+    console.log('⚠️ WhatsApp desconectado:', reason);
     isReady = false;
     clientStatus = 'disconnected';
-    client.initialize();
+    
+    // Lógica Anti-Loop:
+    // Destrói a instância atual para limpar memória e processos travados
+    try {
+        await client.destroy();
+    } catch (e) {
+        console.error('Erro ao destruir cliente:', e);
+    }
+
+    // Espera 5 segundos antes de tentar reconectar
+    console.log('🔄 Reiniciando em 5 segundos...');
+    setTimeout(() => {
+        client.initialize();
+    }, 5000);
 });
 
 // ESCUTA MENSAGENS RECEBIDAS
 client.on('message', async msg => {
     try {
         const fromNumber = msg.from.replace('@c.us', '');
-        // Log simplificado para garantir visibilidade do evento
         console.log(`[🔔 NOTIFICAÇÃO] Mensagem recebida de: ${fromNumber}`);
         
-        // Armazena timestamp E conteúdo (mesmo que não usemos o texto na UI, guardamos para log)
         incomingActivity[fromNumber] = {
             timestamp: Date.now(),
-            body: "Nova mensagem recebida. Verifique o WhatsApp." // Texto padrão para garantir privacidade/compatibilidade
+            body: "Nova mensagem recebida. Verifique o WhatsApp."
         };
     } catch (e) {
         console.error('Erro ao processar msg recebida', e);
     }
 });
 
-client.initialize();
+// Inicialização segura
+try {
+    client.initialize();
+} catch (e) {
+    console.error("Erro fatal na inicialização:", e);
+}
+
+// --- FUNÇÕES AUXILIARES ---
 
 function formatPhoneNumber(phone) {
     let clean = phone.replace(/\D/g, '');
-    if (clean.length === 10 || clean.length === 11) {
+    // Se for celular SP (11 + 9 dígitos) ou fixo/outros estados
+    if (clean.length >= 10 && clean.length <= 11) {
         clean = '55' + clean;
     }
     return clean;
 }
+
+// --- ROTAS DA API ---
 
 app.get('/', (req, res) => {
     res.send('ImobiFlow Server está rodando! Acesse /scan para conectar.');
@@ -120,7 +154,7 @@ app.get('/scan', (req, res) => {
         return res.send(`
             <div style="font-family: sans-serif; text-align: center; padding: 50px;">
                 <h1>Iniciando... ⏳</h1>
-                <p>Aguarde alguns segundos e recarregue a página.</p>
+                <p>Aguarde o QR Code ser gerado (pode levar até 20s na primeira vez)...</p>
                 <script>setTimeout(() => window.location.reload(), 3000);</script>
             </div>
         `);
@@ -134,7 +168,6 @@ app.get('/scan', (req, res) => {
     `);
 });
 
-// Endpoint para limpar o histórico de notificações (útil para testes)
 app.get('/clear', (req, res) => {
     for (const key in incomingActivity) {
         delete incomingActivity[key];
@@ -158,7 +191,7 @@ app.post('/send', async (req, res) => {
         const formattedPhone = formatPhoneNumber(phone);
         const chatId = `${formattedPhone}@c.us`;
         
-        // Verifica se o número existe no WhatsApp antes de enviar
+        // Verifica existência do número
         const contactId = await client.getNumberId(chatId);
         
         if (!contactId) {
