@@ -345,6 +345,11 @@ const App: React.FC = () => {
       }
   };
 
+  const handleUpdateServerUrl = (newUrl: string) => {
+      setSettings(prev => prev ? ({...prev, serverUrl: newUrl}) : null);
+      setToast({message: "URL do servidor atualizada!", type: 'success'});
+  };
+
   // --- NORMAL UI HANDLERS ---
 
   const handleSaveContact = (contact: Contact) => {
@@ -885,6 +890,7 @@ const App: React.FC = () => {
                 setSettings(prev => prev ? ({...prev, whatsappConnected: true}) : null);
             }}
             serverUrl={settings.serverUrl}
+            onUrlChange={handleUpdateServerUrl}
         />
       </main>
     </div>

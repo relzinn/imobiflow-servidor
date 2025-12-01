@@ -38,6 +38,7 @@ export interface Contact {
 
 export interface AppSettings {
   agentName: string;
+  apiKey?: string; // NOVA: Chave da API do Google inserida pelo usuário
   messageTone: 'Formal' | 'Casual' | 'Persuasivo' | 'Amigável';
   defaultFrequencyOwner: number;
   defaultFrequencyBuilder: number;

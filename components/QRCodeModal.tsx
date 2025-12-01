@@ -7,12 +7,19 @@ interface QRCodeModalProps {
   onClose: () => void;
   onConnected: () => void;
   serverUrl?: string;
+  onUrlChange?: (newUrl: string) => void; // Callback para atualizar URL
 }
 
-export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onConnected, serverUrl = 'http://localhost:3001' }) => {
+export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onConnected, serverUrl = 'http://localhost:3001', onUrlChange }) => {
   const [qrCodeImage, setQrCodeImage] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'qr' | 'success' | 'error'>('loading');
   const [retryCount, setRetryCount] = useState(0);
+  const [tempUrl, setTempUrl] = useState(serverUrl);
+
+  // Sincroniza o input local se a prop mudar externamente
+  useEffect(() => {
+      setTempUrl(serverUrl);
+  }, [serverUrl]);
 
   useEffect(() => {
     let intervalId: ReturnType<typeof setInterval>;
@@ -24,7 +31,11 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onCon
       const checkStatus = async () => {
         try {
           // Check Status
-          const statusRes = await fetch(`${serverUrl}/status`);
+          // Usa tempUrl para permitir testes antes de salvar, ou serverUrl se preferir
+          // Aqui vamos usar o serverUrl que é passado (e atualizado via onUrlChange)
+          const urlToUse = serverUrl; 
+
+          const statusRes = await fetch(`${urlToUse}/status`);
           const statusData = await statusRes.json();
 
           if (statusData.isReady || statusData.status === 'ready') {
@@ -39,7 +50,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onCon
 
           // If not ready, get QR
           if (statusData.status === 'qr_ready' || statusData.status === 'initializing') {
-              const qrRes = await fetch(`${serverUrl}/qr`);
+              const qrRes = await fetch(`${urlToUse}/qr`);
               const qrData = await qrRes.json();
               
               if (qrData.qrCode) {
@@ -68,6 +79,16 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onCon
     setStatus('loading');
   };
 
+  const handleSaveUrl = () => {
+      if (onUrlChange) {
+          // Remove barra final se tiver
+          const cleanUrl = tempUrl.replace(/\/$/, '');
+          onUrlChange(cleanUrl);
+          // O useEffect vai disparar novamente pois serverUrl mudou
+          setStatus('loading');
+      }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -94,23 +115,38 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onCon
                 <div className="text-center">
                     <div className="animate-spin w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full mx-auto mb-4"></div>
                     <p className="text-sm text-gray-600 font-medium">Buscando QR Code...</p>
-                    <p className="text-xs text-gray-400 mt-2">Certifique-se que o server.js está rodando</p>
+                    <p className="text-xs text-gray-400 mt-2">Tentando conectar em:</p>
+                    <p className="text-xs font-mono bg-gray-200 px-2 py-1 rounded mt-1 truncate max-w-[200px]">{serverUrl}</p>
                 </div>
             )}
 
             {status === 'error' && (
-                <div className="text-center">
-                    <div className="text-red-500 mb-2">⚠️</div>
-                    <p className="text-sm text-gray-800 font-bold mb-2">Servidor Offline</p>
-                    <p className="text-xs text-gray-500 mb-4">
-                        Não foi possível conectar em {serverUrl}
-                    </p>
-                    <button 
-                        onClick={handleRetry}
-                        className="text-xs bg-gray-200 hover:bg-gray-300 px-3 py-2 rounded text-gray-700 font-medium"
-                    >
-                        Tentar Novamente
-                    </button>
+                <div className="text-center w-full">
+                    <div className="text-red-500 mb-2 text-2xl">⚠️</div>
+                    <p className="text-sm text-gray-800 font-bold mb-4">Falha na Conexão</p>
+                    
+                    <div className="mb-4 text-left">
+                        <label className="text-[10px] text-gray-500 font-bold uppercase block mb-1">Endereço do Servidor</label>
+                        <div className="flex gap-2">
+                            <input 
+                                type="text" 
+                                value={tempUrl} 
+                                onChange={(e) => setTempUrl(e.target.value)}
+                                className="text-xs border border-gray-300 rounded p-2 flex-1 focus:border-blue-500 outline-none"
+                                placeholder="http://localhost:3001"
+                            />
+                        </div>
+                        <p className="text-[10px] text-gray-400 mt-1">Tente trocar localhost por 127.0.0.1</p>
+                    </div>
+
+                    <div className="flex gap-2">
+                        <button 
+                            onClick={handleSaveUrl}
+                            className="flex-1 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded font-bold transition-colors"
+                        >
+                            Salvar e Tentar
+                        </button>
+                    </div>
                 </div>
             )}
 

@@ -2,32 +2,25 @@
 import { GoogleGenAI } from "@google/genai";
 import { Contact, AppSettings, ContactType } from "../types";
 
-// Note: In a real production app, you might proxy this through a backend.
-// For this demo, we assume the API KEY is available in the environment.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Agora instanciamos a IA dinamicamente com a chave fornecida pelo usuário
+// Isso resolve o problema de falta de process.env e evita erros se a chave mudar/for revogada
 
 export const generateFollowUpMessage = async (
   contact: Contact,
   settings: AppSettings,
-  isNudge: boolean = false // Novo parâmetro: é uma cobrança?
+  isNudge: boolean = false
 ): Promise<string> => {
   const modelId = "gemini-2.5-flash"; 
-
-  let promptContext = "";
-  let objective = "";
-
-  // Definição de contexto baseada no tipo
-  switch (contact.type) {
-    case ContactType.OWNER:
-      promptContext = "Este contato é um PROPRIETÁRIO de um imóvel.";
-      break;
-    case ContactType.BUILDER:
-      promptContext = "Este contato é um CONSTRUTOR.";
-      break;
-    case ContactType.CLIENT:
-      promptContext = "Este contato é um CLIENTE COMPRADOR.";
-      break;
+  
+  // Verificação de Segurança
+  if (!settings.apiKey) {
+      console.error("API Key não encontrada nas configurações.");
+      return "Erro: Chave API do Google não configurada. Vá em Reconfigurar Sistema.";
   }
+
+  const ai = new GoogleGenAI({ apiKey: settings.apiKey });
+
+  let objective = "";
 
   // Definição do objetivo baseada se é primeira msg ou cobrança
   if (isNudge) {

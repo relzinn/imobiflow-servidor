@@ -10,6 +10,7 @@ interface StrategyWizardProps {
 export const StrategyWizard: React.FC<StrategyWizardProps> = ({ onComplete }) => {
   const [step, setStep] = React.useState(1);
   const [name, setName] = React.useState('');
+  const [apiKey, setApiKey] = React.useState('');
   const [tone, setTone] = React.useState<AppSettings['messageTone']>('Casual');
   
   // Separate states for each contact type frequency
@@ -41,6 +42,7 @@ export const StrategyWizard: React.FC<StrategyWizardProps> = ({ onComplete }) =>
   const handleFinish = () => {
     onComplete({
       agentName: name,
+      apiKey: apiKey,
       messageTone: tone,
       defaultFrequencyOwner: daysOwner,
       defaultFrequencyBuilder: daysBuilder,
@@ -92,31 +94,48 @@ export const StrategyWizard: React.FC<StrategyWizardProps> = ({ onComplete }) =>
             </div>
           )}
 
-          {/* STEP 2: Tone */}
+          {/* STEP 2: AI Config */}
           {step === 2 && (
-            <div className="animate-in fade-in slide-in-from-right-4 duration-300">
-              <p className="text-sm text-gray-600 mb-4">Escolha a personalidade da sua IA:</p>
-              <div className="grid grid-cols-2 gap-4">
-                {['Formal', 'Casual', 'Persuasivo', 'Amigável'].map((t) => (
-                  <button
-                    key={t}
-                    type="button"
-                    onClick={() => setTone(t as any)}
-                    className={`p-4 rounded-xl border-2 text-left transition-all hover:scale-[1.02] ${
-                      tone === t 
-                        ? 'bg-purple-50 border-purple-600 text-purple-900' 
-                        : 'bg-white text-gray-600 border-gray-100 hover:border-purple-200'
-                    }`}
-                  >
-                    <div className="font-bold text-lg mb-1">{t}</div>
-                    <div className="text-xs opacity-70">
-                      {t === 'Formal' && "Prezado(a), gostaria de verificar..."}
-                      {t === 'Casual' && "Oi! Tudo bem? Passando pra saber..."}
-                      {t === 'Persuasivo' && "Oportunidade única passando..."}
-                      {t === 'Amigável' && "Olá amigo, como estão as coisas?"}
-                    </div>
-                  </button>
-                ))}
+            <div className="animate-in fade-in slide-in-from-right-4 duration-300 space-y-6">
+              <div>
+                <label className="block text-sm font-bold text-gray-800 mb-2">Chave de API do Google Gemini</label>
+                <input 
+                  type="password"
+                  required
+                  placeholder="Cole sua chave aqui (AIza...)"
+                  className="w-full p-3 text-sm rounded-lg border border-gray-300 focus:ring-2 focus:ring-blue-500 outline-none font-mono"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                />
+                <p className="text-xs text-gray-500 mt-2">
+                  Necessário para gerar mensagens. Obtenha grátis em: <a href="https://aistudio.google.com/app/apikey" target="_blank" className="text-blue-600 underline">Google AI Studio</a>.
+                </p>
+              </div>
+
+              <div>
+                  <p className="text-sm text-gray-600 mb-4">Escolha a personalidade da sua IA:</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    {['Formal', 'Casual', 'Persuasivo', 'Amigável'].map((t) => (
+                      <button
+                        key={t}
+                        type="button"
+                        onClick={() => setTone(t as any)}
+                        className={`p-4 rounded-xl border-2 text-left transition-all hover:scale-[1.02] ${
+                          tone === t 
+                            ? 'bg-purple-50 border-purple-600 text-purple-900' 
+                            : 'bg-white text-gray-600 border-gray-100 hover:border-purple-200'
+                        }`}
+                      >
+                        <div className="font-bold text-lg mb-1">{t}</div>
+                        <div className="text-xs opacity-70">
+                          {t === 'Formal' && "Prezado(a), gostaria de verificar..."}
+                          {t === 'Casual' && "Oi! Tudo bem? Passando pra saber..."}
+                          {t === 'Persuasivo' && "Oportunidade única passando..."}
+                          {t === 'Amigável' && "Olá amigo, como estão as coisas?"}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
               </div>
             </div>
           )}
@@ -259,7 +278,7 @@ export const StrategyWizard: React.FC<StrategyWizardProps> = ({ onComplete }) =>
           {step < 4 ? (
             <button 
               onClick={nextStep}
-              disabled={!name}
+              disabled={step === 1 ? !name : (step === 2 && !apiKey)}
               className="bg-slate-800 text-white px-8 py-3 rounded-xl font-bold hover:bg-slate-700 transition-colors disabled:opacity-50 flex items-center gap-2"
             >
               Próximo <span className="text-xl">→</span>
