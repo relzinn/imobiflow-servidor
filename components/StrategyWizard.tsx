@@ -12,7 +12,7 @@ export const StrategyWizard: React.FC<StrategyWizardProps> = ({ onComplete }) =>
   const [tone, setTone] = React.useState<AppSettings['messageTone']>('Casual');
   const [days, setDays] = React.useState({ owner: 60, builder: 30, client: 15 });
   const [integration, setIntegration] = React.useState<'browser' | 'server'>('browser');
-  const [serverUrl, setServerUrl] = React.useState('http://localhost:3001');
+  const [serverUrl, setServerUrl] = React.useState('https://ameer-uncondensational-lemuel.ngrok-free.dev');
 
   const handleFinish = () => {
     onComplete({

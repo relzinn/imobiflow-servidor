@@ -109,17 +109,20 @@ const App: React.FC = () => {
     if (!settings || settings.integrationMode !== 'server') return;
     
     try {
-        const url = (settings.serverUrl || 'http://localhost:3001').replace(/\/$/, '');
+        const url = (settings.serverUrl || 'https://ameer-uncondensational-lemuel.ngrok-free.dev').replace(/\/$/, '');
         
+        // Headers para pular aviso do ngrok
+        const headers = { 'ngrok-skip-browser-warning': 'true' };
+
         // 1. Checa Status
-        const stRes = await fetch(`${url}/status`);
+        const stRes = await fetch(`${url}/status`, { headers });
         const stData = await stRes.json();
         setServerStatus(stData.isReady);
         setLastSync(new Date().toLocaleTimeString());
 
         if (stData.isReady) {
             // 2. Busca Atividade (Respostas)
-            const actRes = await fetch(`${url}/activity`);
+            const actRes = await fetch(`${url}/activity`, { headers });
             const actData = await actRes.json();
             
             // Processa mensagens
@@ -168,14 +171,21 @@ const App: React.FC = () => {
     }
   }, [settings?.integrationMode, settings?.serverUrl]);
 
+  const handleUpdateServerUrl = (newUrl: string) => {
+      setSettings(prev => prev ? ({ ...prev, serverUrl: newUrl }) : null);
+  };
+
   // --- AUTOMAÇÃO ---
 
   const sendViaServer = async (phone: string, text: string) => {
       try {
-          const url = (settings?.serverUrl || 'http://localhost:3001').replace(/\/$/, '');
+          const url = (settings?.serverUrl || 'https://ameer-uncondensational-lemuel.ngrok-free.dev').replace(/\/$/, '');
           const res = await fetch(`${url}/send`, {
               method: 'POST',
-              headers: {'Content-Type': 'application/json'},
+              headers: {
+                  'Content-Type': 'application/json',
+                  'ngrok-skip-browser-warning': 'true' // Vital para ngrok free
+              },
               body: JSON.stringify({ phone, message: text })
           });
           const d = await res.json();
@@ -315,6 +325,16 @@ const App: React.FC = () => {
       setSending(false);
   };
 
+  const handleClearServerCache = async () => {
+      try {
+          const url = (settings?.serverUrl || 'https://ameer-uncondensational-lemuel.ngrok-free.dev').replace(/\/$/, '');
+          await fetch(`${url}/clear`, { headers: {'ngrok-skip-browser-warning': 'true'} });
+          setToast({msg: 'Memória do servidor limpa.', type: 'success'});
+      } catch(e) {
+          setToast({msg: 'Erro ao limpar servidor.', type: 'error'});
+      }
+  };
+
   // --- RENDER ---
 
   if (!settings) return <StrategyWizard onComplete={setSettings} />;
@@ -344,9 +364,12 @@ const App: React.FC = () => {
                         ) : <span className="text-yellow-500 text-xs">Manual</span>}
                     </div>
                     {settings.integrationMode === 'server' && (
-                        <div className="text-[10px] text-slate-500 flex justify-between mt-2 pt-2 border-t border-slate-700">
-                            <span>Sync: {lastSync}</span>
-                            <button onClick={syncServer} title="Atualizar"><Icons.Refresh /></button>
+                        <div className="text-[10px] text-slate-500 flex flex-col gap-1 mt-2 pt-2 border-t border-slate-700">
+                            <div className="flex justify-between items-center">
+                                <span>Sync: {lastSync}</span>
+                                <button onClick={syncServer} title="Atualizar"><Icons.Refresh /></button>
+                            </div>
+                            <button onClick={handleClearServerCache} className="text-blue-400 hover:text-white text-left mt-1">Limpar Cache Servidor</button>
                         </div>
                     )}
                 </div>
@@ -494,7 +517,7 @@ const App: React.FC = () => {
                 onClose={() => setIsQRCodeOpen(false)} 
                 onConnected={() => { setServerStatus(true); setIsQRCodeOpen(false); }}
                 serverUrl={settings.serverUrl}
-                onUrlChange={(url) => setSettings({...settings, serverUrl: url})}
+                onUrlChange={handleUpdateServerUrl}
             />
 
             {/* Inbox Modal */}

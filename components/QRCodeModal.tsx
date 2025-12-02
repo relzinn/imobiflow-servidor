@@ -10,7 +10,7 @@ interface QRCodeModalProps {
   onUrlChange?: (newUrl: string) => void;
 }
 
-export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onConnected, serverUrl = 'http://localhost:3001', onUrlChange }) => {
+export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onConnected, serverUrl = 'https://ameer-uncondensational-lemuel.ngrok-free.dev', onUrlChange }) => {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'qr' | 'success' | 'error'>('loading');
   const [tempUrl, setTempUrl] = useState(serverUrl);
@@ -28,9 +28,10 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onCon
     const interval = setInterval(async () => {
       try {
         const url = serverUrl.replace(/\/$/, ''); // Remove barra final
+        const headers = { 'ngrok-skip-browser-warning': 'true' }; // Headers para ngrok
         
         // 1. Checa Status
-        const statusRes = await fetch(`${url}/status?t=${Date.now()}`); // Anti-cache
+        const statusRes = await fetch(`${url}/status?t=${Date.now()}`, { headers }); // Anti-cache
         if (!statusRes.ok) throw new Error("Erro de rede");
         
         const statusData = await statusRes.json();
@@ -47,7 +48,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onCon
 
         // 2. Se não estiver pronto, busca QR
         if (statusData.status === 'qr_ready') {
-           const qrRes = await fetch(`${url}/qr?t=${Date.now()}`);
+           const qrRes = await fetch(`${url}/qr?t=${Date.now()}`, { headers });
            const qrData = await qrRes.json();
            if (qrData.qrCode) {
               setQrCode(qrData.qrCode);
@@ -88,7 +89,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onCon
                <div className="text-center">
                   <div className="animate-spin w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mx-auto mb-4"></div>
                   <p className="text-gray-500 text-sm">Buscando servidor...</p>
-                  <p className="text-xs text-gray-400 mt-2 font-mono bg-gray-200 px-2 py-1 rounded">{serverUrl}</p>
+                  <p className="text-xs text-gray-400 mt-2 font-mono bg-gray-200 px-2 py-1 rounded break-all">{serverUrl}</p>
                </div>
             )}
 
@@ -104,7 +105,7 @@ export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onCon
                         className="w-full border-b border-gray-300 py-1 text-sm outline-none focus:border-blue-500"
                         value={tempUrl}
                         onChange={(e) => setTempUrl(e.target.value)}
-                        placeholder="http://localhost:3001"
+                        placeholder="https://..."
                       />
                       <button 
                         onClick={handleUpdateUrl}
