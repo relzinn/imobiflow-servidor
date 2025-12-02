@@ -6,25 +6,24 @@ const qrcodeTerminal = require('qrcode-terminal');
 const cors = require('cors');
 
 const app = express();
+// Usa porta do ambiente ou 3001
 const PORT = process.env.PORT || 3001;
 
-// Permitir qualquer origem e métodos (CORS Total para evitar bloqueio local)
-app.use(cors({ origin: '*', methods: ['GET', 'POST'] }));
+// CORS Total para evitar bloqueios de localhost vs 127.0.0.1
+app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-// Armazenamento em memória
+// Estado do Sistema
 let qrCodeData = null;
-let isReady = false;
 let clientStatus = 'initializing';
+let isReady = false;
 
-// Cache de últimas mensagens recebidas
+// Armazena últimas mensagens recebidas (chave = telefone)
 const incomingActivity = {};
 
-// Configuração robusta do Cliente
+// Configuração do Cliente WhatsApp
 const client = new Client({
-    authStrategy: new LocalAuth({
-        clientId: "imobiflow-session"
-    }),
+    authStrategy: new LocalAuth({ clientId: "imobiflow-crm" }),
     puppeteer: {
         headless: true,
         args: [
@@ -40,92 +39,74 @@ const client = new Client({
     }
 });
 
-// --- EVENTOS DO CLIENTE ---
+// --- Eventos do WhatsApp ---
 
 client.on('qr', (qr) => {
-    console.log('📱 QR Code recebido! Escaneie agora.');
+    console.log('📱 QR Code Novo Gerado!');
     qrcodeTerminal.generate(qr, { small: true });
     
     qrcode.toDataURL(qr, (err, url) => {
-        qrCodeData = url;
-        clientStatus = 'qr_ready';
+        if (!err) {
+            qrCodeData = url;
+            clientStatus = 'qr_ready';
+        }
     });
 });
 
 client.on('ready', () => {
-    console.log('✅ WhatsApp Conectado e Pronto!');
+    console.log('✅ WhatsApp Conectado!');
     isReady = true;
     clientStatus = 'ready';
     qrCodeData = null;
 });
 
 client.on('authenticated', () => {
-    console.log('🔑 Sessão Autenticada com sucesso!');
+    console.log('🔑 Autenticado com sucesso.');
     clientStatus = 'authenticated';
-    qrCodeData = null;
 });
 
-client.on('auth_failure', msg => {
-    console.error('❌ Falha na autenticação:', msg);
+client.on('auth_failure', () => {
+    console.error('❌ Falha na autenticação. Reiniciando...');
     clientStatus = 'error';
+    isReady = false;
 });
 
 client.on('disconnected', async (reason) => {
-    console.log('⚠️ WhatsApp desconectado:', reason);
+    console.log('⚠️ Desconectado:', reason);
     isReady = false;
     clientStatus = 'disconnected';
     
-    // ANTI-LOOP: Destrói cliente antigo e aguarda antes de reiniciar
+    // Evita loop rápido de reinicialização
     try {
         await client.destroy();
-    } catch (e) {
-        console.error('Erro ao destruir cliente:', e);
-    }
-
-    console.log('🔄 Aguardando 5 segundos para reiniciar...');
+    } catch(e) {}
+    
     setTimeout(() => {
-        console.log('🚀 Tentando inicializar novamente...');
-        client.initialize().catch(e => console.error("Falha ao reinicializar:", e));
+        console.log('🔄 Tentando reconectar...');
+        client.initialize().catch(e => console.error(e));
     }, 5000);
 });
 
-// ESCUTA MENSAGENS RECEBIDAS
+// Escuta mensagens recebidas
 client.on('message', async msg => {
     try {
+        // Ignora mensagens de status ou grupos
+        if(msg.isStatus || msg.from.includes('@g.us')) return;
+
         const fromNumber = msg.from.replace('@c.us', '');
-        console.log(`[🔔 NOTIFICAÇÃO] Mensagem recebida de: ${fromNumber}`);
+        console.log(`📩 Nova mensagem de: ${fromNumber}`);
         
+        // Registra atividade
         incomingActivity[fromNumber] = {
             timestamp: Date.now(),
-            body: "Nova mensagem recebida. Verifique o WhatsApp."
+            body: msg.body || "Nova mensagem"
         };
     } catch (e) {
-        console.error('Erro ao processar msg recebida', e);
+        console.error("Erro ao processar mensagem", e);
     }
 });
 
-// Inicialização segura
-try {
-    client.initialize();
-} catch (e) {
-    console.error("Erro fatal na inicialização:", e);
-}
-
-// --- FUNÇÕES AUXILIARES ---
-
-function formatPhoneNumber(phone) {
-    let clean = phone.replace(/\D/g, '');
-    if (clean.length >= 10 && clean.length <= 11) {
-        clean = '55' + clean;
-    }
-    return clean;
-}
-
-// --- ROTAS DA API ---
-
-app.get('/', (req, res) => {
-    res.send('ImobiFlow Server está rodando! Acesse /scan para conectar.');
-});
+// --- API Endpoints ---
 
 app.get('/status', (req, res) => {
     res.json({ 
@@ -135,55 +116,58 @@ app.get('/status', (req, res) => {
 });
 
 app.get('/qr', (req, res) => {
-    // Adiciona timestamp para evitar cache
-    res.json({ qrCode: qrCodeData, ts: Date.now() });
-});
-
-app.get('/scan', (req, res) => {
-    if (isReady) {
-        return res.send('<h1 style="color:green">Conectado! ✅</h1>');
-    }
-    if (!qrCodeData) {
-        return res.send(`<h1>Carregando... ⏳</h1><p>Status: ${clientStatus}</p><script>setTimeout(()=>window.location.reload(),3000)</script>`);
-    }
-    res.send(`<img src="${qrCodeData}" /><p>Escaneie no WhatsApp</p><script>setTimeout(()=>window.location.reload(),3000)</script>`);
-});
-
-app.get('/clear', (req, res) => {
-    for (const key in incomingActivity) delete incomingActivity[key];
-    res.json({ success: true });
+    res.json({ 
+        qrCode: qrCodeData,
+        ts: Date.now() // Cache busting
+    });
 });
 
 app.get('/activity', (req, res) => {
     res.json(incomingActivity);
 });
 
-app.post('/send', async (req, res) => {
-    const { phone, message } = req.body;
+app.get('/clear', (req, res) => {
+    for (let k in incomingActivity) delete incomingActivity[k];
+    res.json({ success: true });
+});
 
-    if (!isReady) return res.status(503).json({ error: 'WhatsApp client not ready' });
+// Helper de formatação
+function formatPhone(phone) {
+    let p = phone.replace(/\D/g, '');
+    // Se for Brasil (10 ou 11 digitos) e não tiver 55, adiciona
+    if ((p.length === 10 || p.length === 11) && !p.startsWith('55')) {
+        p = '55' + p;
+    }
+    return p;
+}
+
+app.post('/send', async (req, res) => {
+    if (!isReady) return res.status(503).json({ error: 'WhatsApp não conectado' });
+    
+    const { phone, message } = req.body;
+    const formatted = formatPhone(phone);
+    const chatId = `${formatted}@c.us`;
 
     try {
-        const formattedPhone = formatPhoneNumber(phone);
-        const chatId = `${formattedPhone}@c.us`;
-        
-        const contactId = await client.getNumberId(chatId);
-        
-        if (!contactId) {
-            console.log(`[ERRO ENVIO] Número inválido: ${formattedPhone}`);
-            return res.status(404).json({ success: false, error: 'Número inválido.' });
+        // Verifica se número existe
+        const numberId = await client.getNumberId(chatId);
+        if (!numberId) {
+            return res.json({ success: false, error: 'Número não possui WhatsApp' });
         }
-        
-        await client.sendMessage(contactId._serialized, message);
-        console.log(`[ENVIADA] Para: ${formattedPhone}`);
+
+        await client.sendMessage(numberId._serialized, message);
+        console.log(`📤 Enviado para ${formatted}`);
         res.json({ success: true });
-    } catch (error) {
-        console.error('Erro ao enviar:', error);
-        res.status(500).json({ error: 'Failed to send' });
+    } catch (e) {
+        console.error("Erro envio:", e);
+        res.status(500).json({ success: false, error: e.message });
     }
 });
 
-// Escuta em 0.0.0.0 para garantir acesso externo/local correto
+// Inicializa
+client.initialize().catch(e => console.error("Erro init:", e));
+
+// Ouve em todos os IPs
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Servidor rodando na porta ${PORT}`);
+    console.log(`🚀 Servidor rodando na porta ${PORT}`);
 });

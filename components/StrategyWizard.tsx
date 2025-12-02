@@ -1,7 +1,6 @@
 
 import React from 'react';
 import { AppSettings } from '../types';
-import { Icons } from '../constants';
 
 interface StrategyWizardProps {
   onComplete: (settings: AppSettings) => void;
@@ -10,65 +9,82 @@ interface StrategyWizardProps {
 export const StrategyWizard: React.FC<StrategyWizardProps> = ({ onComplete }) => {
   const [step, setStep] = React.useState(1);
   const [name, setName] = React.useState('');
-  // API Key removida do fluxo visual
   const [tone, setTone] = React.useState<AppSettings['messageTone']>('Casual');
-  
-  const [daysOwner, setDaysOwner] = React.useState(60);
-  const [daysBuilder, setDaysBuilder] = React.useState(30);
-  const [daysClient, setDaysClient] = React.useState(15);
-
-  const [integrationMode, setIntegrationMode] = React.useState<'browser' | 'server'>('browser');
+  const [days, setDays] = React.useState({ owner: 60, builder: 30, client: 15 });
+  const [integration, setIntegration] = React.useState<'browser' | 'server'>('browser');
   const [serverUrl, setServerUrl] = React.useState('http://localhost:3001');
-
-  const [waMode, setWaMode] = React.useState<'web' | 'app'>('web');
-  const [connectionVerified, setConnectionVerified] = React.useState(false);
-
-  const testConnection = () => {
-    const text = encodeURIComponent("Olá! Esta é uma mensagem de teste do ImobiFlow.");
-    let url = '';
-    if (waMode === 'app') {
-      url = `whatsapp://send?text=${text}`;
-    } else {
-      url = `https://web.whatsapp.com/send?text=${text}`;
-    }
-    window.open(url, '_blank');
-  };
 
   const handleFinish = () => {
     onComplete({
       agentName: name,
-      apiKey: '', // Sem API Key
+      apiKey: '',
       messageTone: tone,
-      defaultFrequencyOwner: daysOwner,
-      defaultFrequencyBuilder: daysBuilder,
-      defaultFrequencyClient: daysClient,
-      integrationMode: integrationMode,
-      serverUrl: integrationMode === 'server' ? serverUrl : undefined,
-      preferredWhatsappMode: waMode,
-      whatsappConnected: connectionVerified
+      defaultFrequencyOwner: days.owner,
+      defaultFrequencyBuilder: days.builder,
+      defaultFrequencyClient: days.client,
+      integrationMode: integration,
+      serverUrl: integration === 'server' ? serverUrl : undefined,
+      preferredWhatsappMode: 'web',
+      whatsappConnected: false
     });
   };
 
-  const nextStep = () => setStep(s => s + 1);
-  const prevStep = () => setStep(s => s - 1);
-
   return (
-    <div className="fixed inset-0 bg-slate-900 bg-opacity-95 flex items-center justify-center p-4 z-50 overflow-y-auto">
-      <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-8 my-8 transition-all duration-300">
-        
-        <div className="flex gap-2 mb-8">
-          {[1, 2, 3].map(i => (
-            <div key={i} className={`h-2 flex-1 rounded-full ${i <= step ? 'bg-blue-600' : 'bg-gray-200'}`} />
-          ))}
-        </div>
-
+    <div className="fixed inset-0 bg-slate-900 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-2xl shadow-xl max-w-lg w-full p-8">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-slate-800">
-            {step === 1 && "1. Sua Identidade & Estilo"}
-            {step === 2 && "2. Ciclos de Follow-up"}
-            {step === 3 && "3. Configurar WhatsApp"}
-          </h1>
+           <h1 className="text-2xl font-bold mb-2">Configuração Inicial</h1>
+           <div className="h-1 bg-gray-100 rounded overflow-hidden">
+               <div className="h-full bg-blue-600 transition-all duration-300" style={{width: `${step * 33.3}%`}}></div>
+           </div>
         </div>
 
-        <div className="min-h-[300px]">
-          {/* STEP 1: Identity & Tone
+        {step === 1 && (
+            <div className="space-y-4">
+                <h3 className="font-bold">1. Identidade</h3>
+                <input placeholder="Seu Nome / Apelido" className="w-full border p-3 rounded" value={name} onChange={e => setName(e.target.value)} />
+                <select className="w-full border p-3 rounded" value={tone} onChange={e => setTone(e.target.value as any)}>
+                    <option value="Casual">Casual</option>
+                    <option value="Formal">Formal</option>
+                </select>
+                <button onClick={() => setStep(2)} disabled={!name} className="w-full bg-blue-600 text-white p-3 rounded font-bold mt-4 disabled:opacity-50">Próximo</button>
+            </div>
+        )}
+
+        {step === 2 && (
+            <div className="space-y-4">
+                <h3 className="font-bold">2. Frequência de Contato (Dias)</h3>
+                <div><label>Proprietários</label><input type="number" className="w-full border p-2 rounded" value={days.owner} onChange={e => setDays({...days, owner: Number(e.target.value)})} /></div>
+                <div><label>Construtores</label><input type="number" className="w-full border p-2 rounded" value={days.builder} onChange={e => setDays({...days, builder: Number(e.target.value)})} /></div>
+                <div><label>Clientes</label><input type="number" className="w-full border p-2 rounded" value={days.client} onChange={e => setDays({...days, client: Number(e.target.value)})} /></div>
+                <div className="flex gap-2 mt-4">
+                    <button onClick={() => setStep(1)} className="flex-1 bg-gray-200 p-3 rounded font-bold">Voltar</button>
+                    <button onClick={() => setStep(3)} className="flex-1 bg-blue-600 text-white p-3 rounded font-bold">Próximo</button>
+                </div>
+            </div>
+        )}
+
+        {step === 3 && (
+            <div className="space-y-4">
+                <h3 className="font-bold">3. Integração</h3>
+                <div className="space-y-2">
+                    <button onClick={() => setIntegration('browser')} className={`w-full p-3 rounded border text-left ${integration === 'browser' ? 'border-blue-500 bg-blue-50' : ''}`}>
+                        <strong>Modo Navegador (Simples)</strong><br/><span className="text-xs">Abre janelas do WhatsApp Web.</span>
+                    </button>
+                    <button onClick={() => setIntegration('server')} className={`w-full p-3 rounded border text-left ${integration === 'server' ? 'border-blue-500 bg-blue-50' : ''}`}>
+                        <strong>Modo Automação (Servidor)</strong><br/><span className="text-xs">Envia em segundo plano (requer instalação).</span>
+                    </button>
+                </div>
+                {integration === 'server' && (
+                    <input placeholder="URL do Servidor" className="w-full border p-2 rounded text-sm" value={serverUrl} onChange={e => setServerUrl(e.target.value)} />
+                )}
+                <div className="flex gap-2 mt-4">
+                    <button onClick={() => setStep(2)} className="flex-1 bg-gray-200 p-3 rounded font-bold">Voltar</button>
+                    <button onClick={handleFinish} className="flex-1 bg-green-600 text-white p-3 rounded font-bold">Concluir</button>
+                </div>
+            </div>
+        )}
+      </div>
+    </div>
+  );
+};
