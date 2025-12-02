@@ -9,6 +9,7 @@ interface StrategyWizardProps {
 export const StrategyWizard: React.FC<StrategyWizardProps> = ({ onComplete }) => {
   const [step, setStep] = React.useState(1);
   const [name, setName] = React.useState('');
+  const [agency, setAgency] = React.useState('');
   const [tone, setTone] = React.useState<AppSettings['messageTone']>('Casual');
   const [days, setDays] = React.useState({ owner: 60, builder: 30, client: 15 });
   const [integration, setIntegration] = React.useState<'browser' | 'server'>('browser');
@@ -17,6 +18,7 @@ export const StrategyWizard: React.FC<StrategyWizardProps> = ({ onComplete }) =>
   const handleFinish = () => {
     onComplete({
       agentName: name,
+      agencyName: agency || "Imobiliária",
       apiKey: '',
       messageTone: tone,
       defaultFrequencyOwner: days.owner,
@@ -41,12 +43,28 @@ export const StrategyWizard: React.FC<StrategyWizardProps> = ({ onComplete }) =>
 
         {step === 1 && (
             <div className="space-y-4">
-                <h3 className="font-bold">1. Identidade</h3>
-                <input placeholder="Seu Nome / Apelido" className="w-full border p-3 rounded" value={name} onChange={e => setName(e.target.value)} />
-                <select className="w-full border p-3 rounded" value={tone} onChange={e => setTone(e.target.value as any)}>
-                    <option value="Casual">Casual</option>
-                    <option value="Formal">Formal</option>
-                </select>
+                <h3 className="font-bold">1. Identidade Profissional</h3>
+                <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase">Seu Nome</label>
+                    <input placeholder="Ex: João Silva" className="w-full border p-3 rounded" value={name} onChange={e => setName(e.target.value)} />
+                </div>
+                <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase">Nome da Imobiliária</label>
+                    <input placeholder="Ex: ImobiFlow Negócios" className="w-full border p-3 rounded" value={agency} onChange={e => setAgency(e.target.value)} />
+                </div>
+                <div>
+                    <label className="text-xs font-bold text-gray-500 uppercase">Tom das Mensagens</label>
+                    <select className="w-full border p-3 rounded" value={tone} onChange={e => setTone(e.target.value as any)}>
+                        <option value="Casual">Casual (WhatsApp padrão)</option>
+                        <option value="Formal">Formal (Corporativo)</option>
+                        <option value="Amigável">Amigável (Próximo)</option>
+                        <option value="Persuasivo">Persuasivo (Vendas)</option>
+                        <option value="Consultivo">Consultivo (Especialista)</option>
+                        <option value="Elegante">Elegante (Alto Padrão)</option>
+                        <option value="Urgente">Urgente (Oportunidade)</option>
+                        <option value="Entusiasta">Entusiasta (Energético)</option>
+                    </select>
+                </div>
                 <button onClick={() => setStep(2)} disabled={!name} className="w-full bg-blue-600 text-white p-3 rounded font-bold mt-4 disabled:opacity-50">Próximo</button>
             </div>
         )}

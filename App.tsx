@@ -219,15 +219,17 @@ const App: React.FC = () => {
                     if (await sendViaServer(c.phone, msg)) {
                         change = { 
                             automationStage: AutomationStage.WAITING_REPLY_1,
-                            lastAutomatedMsgDate: new Date().toISOString()
+                            lastAutomatedMsgDate: new Date().toISOString(),
+                            lastContactDate: new Date().toISOString() // CRUCIAL: Atualiza data para evitar loop
                         };
                         setLogs(l => [`✅ Enviado (Ciclo) para ${c.name}`, ...l]);
                     }
                 }
             }
-            // Lógica 2: Cobrança (24h)
+            // Lógica 2: Cobrança (24h após primeiro envio)
             else if (c.automationStage === AutomationStage.WAITING_REPLY_1) {
                 const lastAuto = c.lastAutomatedMsgDate ? new Date(c.lastAutomatedMsgDate).getTime() : 0;
+                // Cobra após 1 dia (padrão)
                 if ((now - lastAuto) > (24 * 60 * 60 * 1000)) {
                     const msg = await generateFollowUpMessage(c, settings, true);
                     if (await sendViaServer(c.phone, msg)) {
@@ -239,7 +241,7 @@ const App: React.FC = () => {
                     }
                 }
             }
-            // Lógica 3: Falha
+            // Lógica 3: Falha (24h após cobrança)
             else if (c.automationStage === AutomationStage.WAITING_REPLY_2) {
                 const lastAuto = c.lastAutomatedMsgDate ? new Date(c.lastAutomatedMsgDate).getTime() : 0;
                 if ((now - lastAuto) > (24 * 60 * 60 * 1000)) {
@@ -289,7 +291,8 @@ const App: React.FC = () => {
   const handleMarkRead = (c: Contact) => {
       handleSaveContact({
           ...c,
-          hasUnreadReply: false
+          hasUnreadReply: false,
+          automationStage: AutomationStage.IDLE // Reset automação
       });
       setToast({msg: 'Mensagem marcada como lida.', type: 'success'});
   };
@@ -333,6 +336,14 @@ const App: React.FC = () => {
       } catch(e) {
           setToast({msg: 'Erro ao limpar servidor.', type: 'error'});
       }
+  };
+
+  // Calcula dias esperando
+  const getDaysWaiting = (dateStr?: string) => {
+      if (!dateStr) return 0;
+      const diff = Date.now() - new Date(dateStr).getTime();
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+      return days;
   };
 
   // --- RENDER ---
@@ -437,57 +448,68 @@ const App: React.FC = () => {
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100 text-sm">
-                        {filtered.map(c => (
-                            <React.Fragment key={c.id}>
-                                <tr className={`hover:bg-gray-50 ${c.hasUnreadReply ? 'bg-yellow-50' : ''}`}>
-                                    <td className="p-4 text-center">
-                                        <button 
-                                            onClick={() => handleSaveContact({...c, autoPilotEnabled: !c.autoPilotEnabled})}
-                                            className={`w-8 h-8 rounded-full flex items-center justify-center ${c.autoPilotEnabled !== false ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}
-                                        >
-                                            {c.autoPilotEnabled !== false ? <Icons.Pause /> : <Icons.Play />}
-                                        </button>
-                                    </td>
-                                    <td className="p-4">
-                                        <div className="font-bold">{c.name}</div>
-                                        <div className="text-xs text-gray-500">{c.type}</div>
-                                        {c.hasUnreadReply && <div className="text-[10px] font-bold text-yellow-600 mt-1">🔔 Nova Resposta</div>}
-                                    </td>
-                                    <td className="p-4">
-                                        {c.automationStage === AutomationStage.IDLE && <span className="px-2 py-1 bg-gray-100 rounded text-xs">Pendente</span>}
-                                        {c.automationStage === AutomationStage.WAITING_REPLY_1 && <span className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs">Aguardando (1)</span>}
-                                        {c.automationStage === AutomationStage.WAITING_REPLY_2 && <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs">Cobrança (2)</span>}
-                                        {c.automationStage === AutomationStage.NO_RESPONSE_ALERT && <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs">Falha</span>}
-                                    </td>
-                                    <td className="p-4 text-right flex justify-end gap-2">
-                                        <button onClick={() => handleManualMsg(c)} className="p-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100"><Icons.Message /></button>
-                                        <button onClick={() => { setEditingContact(c); setIsModalOpen(true); }} className="p-2 bg-gray-50 text-gray-600 rounded hover:bg-gray-100">✏️</button>
-                                        <button onClick={() => handleDelete(c.id)} className="p-2 bg-red-50 text-red-600 rounded hover:bg-red-100"><Icons.Trash /></button>
-                                    </td>
-                                </tr>
-                                {selectedId === c.id && (
-                                    <tr className="bg-blue-50/50">
-                                        <td colSpan={4} className="p-4">
-                                            <div className="bg-white border rounded-lg p-4 shadow-sm max-w-2xl mx-auto">
-                                                <h4 className="font-bold text-sm mb-2">Enviar Mensagem</h4>
-                                                <textarea 
-                                                    className="w-full border rounded p-2 text-sm mb-2" 
-                                                    rows={3}
-                                                    value={genMsg}
-                                                    onChange={e => setGenMsg(e.target.value)}
-                                                />
-                                                <div className="flex justify-end gap-2">
-                                                    <button onClick={() => setSelectedId(null)} className="px-3 py-1 text-sm bg-gray-200 rounded">Cancelar</button>
-                                                    <button onClick={() => sendManual(c)} disabled={sending} className="px-3 py-1 text-sm bg-blue-600 text-white rounded font-bold">
-                                                        {sending ? 'Enviando...' : 'Enviar'}
-                                                    </button>
-                                                </div>
-                                            </div>
+                        {filtered.map(c => {
+                            const daysWaiting = getDaysWaiting(c.lastAutomatedMsgDate);
+                            return (
+                                <React.Fragment key={c.id}>
+                                    <tr className={`hover:bg-gray-50 ${c.hasUnreadReply ? 'bg-yellow-50' : ''}`}>
+                                        <td className="p-4 text-center">
+                                            <button 
+                                                onClick={() => handleSaveContact({...c, autoPilotEnabled: !c.autoPilotEnabled})}
+                                                className={`w-8 h-8 rounded-full flex items-center justify-center ${c.autoPilotEnabled !== false ? 'bg-green-100 text-green-600' : 'bg-gray-100 text-gray-400'}`}
+                                            >
+                                                {c.autoPilotEnabled !== false ? <Icons.Pause /> : <Icons.Play />}
+                                            </button>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="font-bold">{c.name}</div>
+                                            <div className="text-xs text-gray-500">{c.type}</div>
+                                            {c.hasUnreadReply && <div className="text-[10px] font-bold text-yellow-600 mt-1">🔔 Nova Resposta</div>}
+                                        </td>
+                                        <td className="p-4">
+                                            {c.automationStage === AutomationStage.IDLE && <span className="px-2 py-1 bg-gray-100 rounded text-xs">Pendente</span>}
+                                            {c.automationStage === AutomationStage.WAITING_REPLY_1 && (
+                                                <span className="px-2 py-1 bg-indigo-100 text-indigo-700 rounded text-xs">
+                                                    Aguardando (1ª) • {daysWaiting === 0 ? 'Hoje' : `${daysWaiting}d`}
+                                                </span>
+                                            )}
+                                            {c.automationStage === AutomationStage.WAITING_REPLY_2 && (
+                                                <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs">
+                                                    Cobrança (2ª) • {daysWaiting === 0 ? 'Hoje' : `${daysWaiting}d`}
+                                                </span>
+                                            )}
+                                            {c.automationStage === AutomationStage.NO_RESPONSE_ALERT && <span className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs">Falha (Sem Retorno)</span>}
+                                        </td>
+                                        <td className="p-4 text-right flex justify-end gap-2">
+                                            <button onClick={() => handleManualMsg(c)} className="p-2 bg-blue-50 text-blue-600 rounded hover:bg-blue-100"><Icons.Message /></button>
+                                            <button onClick={() => { setEditingContact(c); setIsModalOpen(true); }} className="p-2 bg-gray-50 text-gray-600 rounded hover:bg-gray-100">✏️</button>
+                                            <button onClick={() => handleDelete(c.id)} className="p-2 bg-red-50 text-red-600 rounded hover:bg-red-100"><Icons.Trash /></button>
                                         </td>
                                     </tr>
-                                )}
-                            </React.Fragment>
-                        ))}
+                                    {selectedId === c.id && (
+                                        <tr className="bg-blue-50/50">
+                                            <td colSpan={4} className="p-4">
+                                                <div className="bg-white border rounded-lg p-4 shadow-sm max-w-2xl mx-auto">
+                                                    <h4 className="font-bold text-sm mb-2">Enviar Mensagem</h4>
+                                                    <textarea 
+                                                        className="w-full border rounded p-2 text-sm mb-2" 
+                                                        rows={3}
+                                                        value={genMsg}
+                                                        onChange={e => setGenMsg(e.target.value)}
+                                                    />
+                                                    <div className="flex justify-end gap-2">
+                                                        <button onClick={() => setSelectedId(null)} className="px-3 py-1 text-sm bg-gray-200 rounded">Cancelar</button>
+                                                        <button onClick={() => sendManual(c)} disabled={sending} className="px-3 py-1 text-sm bg-blue-600 text-white rounded font-bold">
+                                                            {sending ? 'Enviando...' : 'Enviar'}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    )}
+                                </React.Fragment>
+                            );
+                        })}
                     </tbody>
                 </table>
             </div>

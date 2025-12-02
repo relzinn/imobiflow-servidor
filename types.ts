@@ -32,8 +32,9 @@ export interface Contact {
 
 export interface AppSettings {
   agentName: string;
-  apiKey?: string; // Opcional (Modo Híbrido)
-  messageTone: 'Formal' | 'Casual' | 'Persuasivo' | 'Amigável';
+  agencyName: string; // Novo campo
+  apiKey?: string;
+  messageTone: 'Formal' | 'Casual' | 'Persuasivo' | 'Amigável' | 'Consultivo' | 'Urgente' | 'Entusiasta' | 'Elegante';
   defaultFrequencyOwner: number;
   defaultFrequencyBuilder: number;
   defaultFrequencyClient: number;

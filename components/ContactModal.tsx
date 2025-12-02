@@ -17,6 +17,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
   const [notes, setNotes] = useState('');
   const [lastContactDate, setLastContactDate] = useState('');
   const [frequencyDays, setFrequencyDays] = useState<number>(30);
+  const [phoneError, setPhoneError] = useState('');
 
   useEffect(() => {
     if (initialContact) {
@@ -34,14 +35,31 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       setLastContactDate(new Date().toISOString().split('T')[0]);
       setFrequencyDays(settings?.defaultFrequencyClient || 30);
     }
+    setPhoneError('');
   }, [initialContact, isOpen, settings]);
+
+  const validateAndFormatPhone = (input: string) => {
+      let clean = input.replace(/\D/g, '');
+      // Se tiver 10 ou 11 dígitos, provavelmente é Brasil sem 55. Adiciona.
+      if (clean.length === 10 || clean.length === 11) {
+          clean = '55' + clean;
+      }
+      return clean;
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const formattedPhone = validateAndFormatPhone(phone);
+    if (!formattedPhone.startsWith('55') || formattedPhone.length < 12) {
+        setPhoneError('O número deve incluir DDI (55) + DDD + Número. Ex: 5511999999999');
+        return;
+    }
+
     onSave({
       id: initialContact ? initialContact.id : (typeof crypto !== 'undefined' ? crypto.randomUUID() : Date.now().toString()),
       name,
-      phone,
+      phone: formattedPhone,
       type,
       notes,
       lastContactDate,
@@ -61,19 +79,59 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 animate-in zoom-in-95">
         <h2 className="text-xl font-bold mb-4">{initialContact ? 'Editar' : 'Novo'} Contato</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <input required placeholder="Nome" className="w-full border rounded p-2" value={name} onChange={e => setName(e.target.value)} />
-          <input required placeholder="WhatsApp (Ex: 11999999999)" className="w-full border rounded p-2" value={phone} onChange={e => setPhone(e.target.value.replace(/\D/g, ''))} />
-          <div className="grid grid-cols-2 gap-4">
-             <select className="border rounded p-2" value={type} onChange={e => setType(e.target.value as ContactType)}>
-                {Object.values(ContactType).map(t => <option key={t} value={t}>{t}</option>)}
-             </select>
-             <input type="number" placeholder="Dias Ciclo" className="border rounded p-2" value={frequencyDays} onChange={e => setFrequencyDays(Number(e.target.value))} />
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1">Nome</label>
+            <input required placeholder="Nome do Cliente" className="w-full border rounded p-2" value={name} onChange={e => setName(e.target.value)} />
           </div>
-          <input type="date" className="w-full border rounded p-2" value={lastContactDate} onChange={e => setLastContactDate(e.target.value)} />
-          <textarea placeholder="Notas..." className="w-full border rounded p-2" value={notes} onChange={e => setNotes(e.target.value)} />
-          <div className="flex justify-end gap-2">
-             <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-100 rounded">Cancelar</button>
-             <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded font-bold">Salvar</button>
+          
+          <div>
+            <label className="block text-xs font-bold text-gray-500 mb-1">WhatsApp (Obrigatório 55)</label>
+            <input 
+                required 
+                placeholder="5511999999999" 
+                className={`w-full border rounded p-2 ${phoneError ? 'border-red-500 bg-red-50' : ''}`}
+                value={phone} 
+                onChange={e => {
+                    setPhone(e.target.value.replace(/\D/g, ''));
+                    setPhoneError('');
+                }} 
+            />
+            {phoneError && <p className="text-xs text-red-500 mt-1">{phoneError}</p>}
+            <p className="text-[10px] text-gray-400 mt-1">O sistema adicionará '55' automaticamente se você esquecer.</p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+             <div>
+                 <label className="block text-xs font-bold text-gray-500 mb-1">Tipo</label>
+                 <select className="w-full border rounded p-2" value={type} onChange={e => setType(e.target.value as ContactType)}>
+                    {Object.values(ContactType).map(t => <option key={t} value={t}>{t}</option>)}
+                 </select>
+             </div>
+             <div>
+                 <label className="block text-xs font-bold text-gray-500 mb-1">Ciclo (Dias)</label>
+                 <input type="number" className="w-full border rounded p-2" value={frequencyDays} onChange={e => setFrequencyDays(Number(e.target.value))} />
+             </div>
+          </div>
+          
+          <div>
+             <label className="block text-xs font-bold text-gray-500 mb-1">Último Contato</label>
+             <input type="date" className="w-full border rounded p-2" value={lastContactDate} onChange={e => setLastContactDate(e.target.value)} />
+          </div>
+
+          <div>
+             <label className="block text-xs font-bold text-gray-500 mb-1">Observações Internas</label>
+             <textarea 
+                placeholder="Ex: Procura apto 3 quartos, reclamou do preço, quer vista pro mar..." 
+                className="w-full border rounded p-2 h-24" 
+                value={notes} 
+                onChange={e => setNotes(e.target.value)} 
+             />
+             <p className="text-[10px] text-gray-400 mt-1">Essa informação é interna. A IA usará apenas como contexto.</p>
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+             <button type="button" onClick={onClose} className="px-4 py-2 bg-gray-100 rounded hover:bg-gray-200">Cancelar</button>
+             <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded font-bold hover:bg-blue-700">Salvar</button>
           </div>
         </form>
       </div>
