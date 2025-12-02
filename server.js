@@ -8,8 +8,8 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Permitir qualquer origem (útil para desenvolvimento local)
-app.use(cors({ origin: '*' }));
+// Permitir qualquer origem e métodos (CORS Total para evitar bloqueio local)
+app.use(cors({ origin: '*', methods: ['GET', 'POST'] }));
 app.use(express.json());
 
 // Armazenamento em memória
@@ -44,10 +44,8 @@ const client = new Client({
 
 client.on('qr', (qr) => {
     console.log('📱 QR Code recebido! Escaneie agora.');
-    // Gera no terminal para facilitar (aparece nos logs do Render)
     qrcodeTerminal.generate(qr, { small: true });
     
-    // Gera imagem para o site
     qrcode.toDataURL(qr, (err, url) => {
         qrCodeData = url;
         clientStatus = 'qr_ready';
@@ -70,7 +68,6 @@ client.on('authenticated', () => {
 client.on('auth_failure', msg => {
     console.error('❌ Falha na autenticação:', msg);
     clientStatus = 'error';
-    // Não reinicia automaticamente em falha de auth para evitar banimento ou loop
 });
 
 client.on('disconnected', async (reason) => {
@@ -78,20 +75,18 @@ client.on('disconnected', async (reason) => {
     isReady = false;
     clientStatus = 'disconnected';
     
-    // LÓGICA ANTI-LOOP DE REINICIALIZAÇÃO
-    // 1. Destrói a instância atual para limpar memória e processos travados
+    // ANTI-LOOP: Destrói cliente antigo e aguarda antes de reiniciar
     try {
         await client.destroy();
     } catch (e) {
-        console.error('Erro ao destruir cliente (pode ser normal se já caiu):', e);
+        console.error('Erro ao destruir cliente:', e);
     }
 
-    // 2. Espera 5 segundos antes de tentar reconectar (respirar)
-    console.log('🔄 Reiniciando sistema em 10 segundos...');
+    console.log('🔄 Aguardando 5 segundos para reiniciar...');
     setTimeout(() => {
         console.log('🚀 Tentando inicializar novamente...');
         client.initialize().catch(e => console.error("Falha ao reinicializar:", e));
-    }, 10000); // 10 segundos de delay
+    }, 5000);
 });
 
 // ESCUTA MENSAGENS RECEBIDAS
@@ -100,7 +95,6 @@ client.on('message', async msg => {
         const fromNumber = msg.from.replace('@c.us', '');
         console.log(`[🔔 NOTIFICAÇÃO] Mensagem recebida de: ${fromNumber}`);
         
-        // Armazena apenas que houve interação, sem o conteúdo (privacidade/segurança)
         incomingActivity[fromNumber] = {
             timestamp: Date.now(),
             body: "Nova mensagem recebida. Verifique o WhatsApp."
@@ -121,7 +115,6 @@ try {
 
 function formatPhoneNumber(phone) {
     let clean = phone.replace(/\D/g, '');
-    // Se for celular SP (11 + 9 dígitos) ou fixo/outros estados
     if (clean.length >= 10 && clean.length <= 11) {
         clean = '55' + clean;
     }
@@ -142,45 +135,23 @@ app.get('/status', (req, res) => {
 });
 
 app.get('/qr', (req, res) => {
-    res.json({ qrCode: qrCodeData });
+    // Adiciona timestamp para evitar cache
+    res.json({ qrCode: qrCodeData, ts: Date.now() });
 });
 
 app.get('/scan', (req, res) => {
     if (isReady) {
-        return res.send(`
-            <div style="font-family: sans-serif; text-align: center; padding: 50px;">
-                <h1 style="color: green;">Conectado! ✅</h1>
-                <p>O robô já está ativo e pronto para uso.</p>
-            </div>
-        `);
+        return res.send('<h1 style="color:green">Conectado! ✅</h1>');
     }
     if (!qrCodeData) {
-        return res.send(`
-            <div style="font-family: sans-serif; text-align: center; padding: 50px;">
-                <h1>Iniciando... ⏳</h1>
-                <p>Aguarde o QR Code ser gerado (pode levar até 20-30s na primeira vez)...</p>
-                <p>Status atual: ${clientStatus}</p>
-                <script>setTimeout(() => window.location.reload(), 5000);</script>
-            </div>
-        `);
+        return res.send(`<h1>Carregando... ⏳</h1><p>Status: ${clientStatus}</p><script>setTimeout(()=>window.location.reload(),3000)</script>`);
     }
-    res.send(`
-        <div style="font-family: sans-serif; text-align: center; padding: 20px;">
-            <h1>Escaneie para Conectar</h1>
-            <img src="${qrCodeData}" style="width: 300px; height: 300px; border: 1px solid #ccc;" />
-            <p>Abra o WhatsApp > Aparelhos Conectados > Conectar Aparelho</p>
-            <p>Se já conectou, aguarde a atualização...</p>
-            <script>setTimeout(() => window.location.reload(), 5000);</script>
-        </div>
-    `);
+    res.send(`<img src="${qrCodeData}" /><p>Escaneie no WhatsApp</p><script>setTimeout(()=>window.location.reload(),3000)</script>`);
 });
 
 app.get('/clear', (req, res) => {
-    for (const key in incomingActivity) {
-        delete incomingActivity[key];
-    }
-    console.log('Histórico de notificações limpo via comando.');
-    res.json({ success: true, message: 'Histórico limpo' });
+    for (const key in incomingActivity) delete incomingActivity[key];
+    res.json({ success: true });
 });
 
 app.get('/activity', (req, res) => {
@@ -190,31 +161,29 @@ app.get('/activity', (req, res) => {
 app.post('/send', async (req, res) => {
     const { phone, message } = req.body;
 
-    if (!isReady) {
-        return res.status(503).json({ error: 'WhatsApp client not ready' });
-    }
+    if (!isReady) return res.status(503).json({ error: 'WhatsApp client not ready' });
 
     try {
         const formattedPhone = formatPhoneNumber(phone);
         const chatId = `${formattedPhone}@c.us`;
         
-        // Verifica existência do número
         const contactId = await client.getNumberId(chatId);
         
         if (!contactId) {
-            console.log(`[ERRO ENVIO] Número inválido/sem zap: ${formattedPhone}`);
-            return res.status(404).json({ success: false, error: 'Número não possui WhatsApp válido.' });
+            console.log(`[ERRO ENVIO] Número inválido: ${formattedPhone}`);
+            return res.status(404).json({ success: false, error: 'Número inválido.' });
         }
         
         await client.sendMessage(contactId._serialized, message);
         console.log(`[ENVIADA] Para: ${formattedPhone}`);
         res.json({ success: true });
     } catch (error) {
-        console.error('Erro ao enviar mensagem:', error);
-        res.status(500).json({ error: 'Failed to send message', details: error.message });
+        console.error('Erro ao enviar:', error);
+        res.status(500).json({ error: 'Failed to send' });
     }
 });
 
-app.listen(PORT, () => {
+// Escuta em 0.0.0.0 para garantir acesso externo/local correto
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`Servidor rodando na porta ${PORT}`);
 });
