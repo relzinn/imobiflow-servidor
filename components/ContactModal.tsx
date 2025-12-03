@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Contact, ContactType, AppSettings, AutomationStage } from '../types';
 
@@ -8,9 +7,10 @@ interface ContactModalProps {
   onSave: (contact: Contact) => void;
   initialContact?: Contact | null;
   settings: AppSettings | null;
+  defaultType?: ContactType;
 }
 
-export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onSave, initialContact, settings }) => {
+export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onSave, initialContact, settings, defaultType }) => {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [type, setType] = useState<ContactType>(ContactType.CLIENT);
@@ -30,13 +30,23 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
     } else {
       setName('');
       setPhone('');
-      setType(ContactType.CLIENT);
+      // Usa o defaultType se fornecido (vindo do filtro), senão usa CLIENT
+      setType(defaultType || ContactType.CLIENT);
       setNotes('');
       setLastContactDate(new Date().toISOString().split('T')[0]);
-      setFrequencyDays(settings?.defaultFrequencyClient || 30);
+      
+      // Tenta definir a frequência baseada no tipo padrão selecionado
+      const targetType = defaultType || ContactType.CLIENT;
+      if (settings) {
+          if (targetType === ContactType.OWNER) setFrequencyDays(settings.defaultFrequencyOwner);
+          else if (targetType === ContactType.BUILDER) setFrequencyDays(settings.defaultFrequencyBuilder);
+          else setFrequencyDays(settings.defaultFrequencyClient);
+      } else {
+          setFrequencyDays(30);
+      }
     }
     setPhoneError('');
-  }, [initialContact, isOpen, settings]);
+  }, [initialContact, isOpen, settings, defaultType]);
 
   const validateAndFormatPhone = (input: string) => {
       let clean = input.replace(/\D/g, '');
