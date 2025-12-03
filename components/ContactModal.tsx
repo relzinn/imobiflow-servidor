@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { Contact, ContactType, AppSettings, AutomationStage } from '../types';
 

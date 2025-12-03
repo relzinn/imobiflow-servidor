@@ -1,4 +1,3 @@
-
 export enum ContactType {
   OWNER = 'Proprietário',
   BUILDER = 'Construtor',
