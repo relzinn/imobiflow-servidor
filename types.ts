@@ -30,16 +30,26 @@ export interface Contact {
   hasUnreadReply?: boolean;
 }
 
+export interface ChatMessage {
+    id: string;
+    fromMe: boolean;
+    body: string;
+    timestamp: number;
+}
+
 export interface AppSettings {
   agentName: string;
-  agencyName: string; // Novo campo
+  agencyName: string;
   apiKey?: string;
   messageTone: 'Formal' | 'Casual' | 'Persuasivo' | 'Amigável' | 'Consultivo' | 'Urgente' | 'Entusiasta' | 'Elegante';
   defaultFrequencyOwner: number;
   defaultFrequencyBuilder: number;
   defaultFrequencyClient: number;
-  integrationMode: 'browser' | 'server';
+  integrationMode: 'server';
   serverUrl?: string;
-  preferredWhatsappMode: 'web' | 'app';
+  preferredWhatsappMode: 'app';
   whatsappConnected: boolean;
+  
+  // Controle Servidor
+  automationActive: boolean;
 }

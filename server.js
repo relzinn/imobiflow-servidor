@@ -16,56 +16,63 @@ const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-// --- BANCO DE DADOS (ARQUIVO JSON) ---
+// --- FUNÇÕES AUXILIARES ---
 
-// Inicializa DB se não existir
-if (!fs.existsSync(DB_FILE)) {
-    fs.writeFileSync(DB_FILE, JSON.stringify([]));
+// Formata telefone para padrão WhatsApp (55 + DDD + Num)
+function formatPhone(phone) {
+    let p = phone.replace(/\D/g, '');
+    // Se tiver 10 ou 11 dígitos, assume BR e poe 55
+    if ((p.length === 10 || p.length === 11) && !p.startsWith('55')) {
+        p = '55' + p;
+    }
+    return p;
 }
+
+// Gera mensagem baseada em templates (Lógica portada do Frontend para Backend)
+function generateTemplateMessage(contact, settings) {
+    const agent = settings.agentName || "Seu Corretor";
+    const agency = settings.agencyName || "nossa imobiliária";
+    
+    // Simples motor de templates para rodar 24/7 sem API Key
+    switch (contact.type) {
+        case 'Proprietário':
+            return `Olá ${contact.name}, aqui é ${agent} da ${agency}. Como estão as coisas? Gostaria de saber se o imóvel ainda está disponível para venda ou se houve alguma mudança. Abraço!`;
+        case 'Construtor':
+            return `Olá ${contact.name}, aqui é ${agent} da ${agency}. Tudo bem? Estou atualizando nossa carteira de áreas e lembrei de você. Ainda está buscando novos terrenos na região?`;
+        case 'Cliente/Comprador':
+        default:
+            return `Olá ${contact.name}, aqui é ${agent} da ${agency}. Tudo bem? Passando para saber se continua na busca pelo seu imóvel ou se podemos retomar a pesquisa com novas opções.`;
+    }
+}
+
+// --- BANCO DE DADOS ---
 
 function getContacts() {
     try {
-        const data = fs.readFileSync(DB_FILE, 'utf8');
-        return JSON.parse(data);
-    } catch (e) {
-        return [];
-    }
+        if (!fs.existsSync(DB_FILE)) return [];
+        return JSON.parse(fs.readFileSync(DB_FILE, 'utf8'));
+    } catch (e) { return []; }
 }
 
 function saveContacts(contacts) {
     try {
         fs.writeFileSync(DB_FILE, JSON.stringify(contacts, null, 2));
         return true;
-    } catch (e) {
-        console.error("Erro ao salvar DB:", e);
-        return false;
-    }
+    } catch (e) { return false; }
 }
 
-// --- CONFIGURAÇÕES (SETTINGS JSON) ---
-
-app.get('/settings', (req, res) => {
+function getSettings() {
     try {
-        if (fs.existsSync(SETTINGS_FILE)) {
-            const data = fs.readFileSync(SETTINGS_FILE, 'utf8');
-            res.json(JSON.parse(data));
-        } else {
-            res.status(404).json({ error: 'Settings not found' });
-        }
-    } catch (e) {
-        res.status(500).json({ error: e.message });
-    }
-});
+        if (!fs.existsSync(SETTINGS_FILE)) return { automationActive: false };
+        return JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+    } catch (e) { return { automationActive: false }; }
+}
 
-app.post('/settings', (req, res) => {
+function saveSettings(s) {
     try {
-        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(req.body, null, 2));
-        res.json({ success: true });
-    } catch (e) {
-        console.error("Erro ao salvar Settings:", e);
-        res.status(500).json({ error: e.message });
-    }
-});
+        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2));
+    } catch (e) {}
+}
 
 // --- WHATSAPP SETUP ---
 
@@ -79,14 +86,8 @@ const client = new Client({
     puppeteer: {
         headless: true,
         args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process', 
-            '--disable-gpu'
+            '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--single-process', '--disable-gpu'
         ]
     }
 });
@@ -95,10 +96,7 @@ client.on('qr', (qr) => {
     console.log('📱 QR Code Novo Gerado!');
     qrcodeTerminal.generate(qr, { small: true });
     qrcode.toDataURL(qr, (err, url) => {
-        if (!err) {
-            qrCodeData = url;
-            clientStatus = 'qr_ready';
-        }
+        if (!err) { qrCodeData = url; clientStatus = 'qr_ready'; }
     });
 });
 
@@ -109,112 +107,141 @@ client.on('ready', () => {
     qrCodeData = null;
 });
 
-client.on('authenticated', () => {
-    console.log('🔑 Autenticado.');
-    clientStatus = 'authenticated';
-});
+client.on('authenticated', () => { clientStatus = 'authenticated'; });
 
 client.on('disconnected', async (reason) => {
     console.log('⚠️ Desconectado:', reason);
     isReady = false;
     clientStatus = 'disconnected';
     try { await client.destroy(); } catch(e) {}
-    setTimeout(() => {
-        console.log('🔄 Reconectando...');
-        client.initialize().catch(e => console.error(e));
-    }, 5000);
+    setTimeout(() => { client.initialize().catch(console.error); }, 5000);
 });
 
 client.on('message', async msg => {
-    try {
-        // Ignora Status, Grupos e MENSAGENS ENVIADAS PELO PRÓPRIO USUÁRIO
-        if(msg.isStatus || msg.from.includes('@g.us') || msg.fromMe) return;
-
-        const fromNumber = msg.from.replace('@c.us', '');
-        console.log(`📩 Nova mensagem de: ${fromNumber}`);
-        
-        incomingActivity[fromNumber] = {
-            timestamp: Date.now(),
-            body: msg.body || "Nova mensagem"
-        };
-    } catch (e) {
-        console.error("Erro msg:", e);
-    }
+    if(msg.isStatus || msg.from.includes('@g.us') || msg.fromMe) return;
+    const fromNumber = msg.from.replace('@c.us', '');
+    console.log(`📩 Nova mensagem de: ${fromNumber}`);
+    incomingActivity[fromNumber] = { timestamp: Date.now(), body: msg.body || "Nova mensagem" };
 });
 
-// --- API ENDPOINTS ---
+// --- MOTOR DE AUTOMAÇÃO (BACKGROUND) ---
 
-// Status e QR
+async function runAutomationCycle() {
+    if (!isReady) return;
+    
+    const settings = getSettings();
+    if (!settings.automationActive) return;
+
+    console.log("🔄 Rodando ciclo de automação...");
+    const contacts = getContacts();
+    let changed = false;
+    const now = Date.now();
+
+    for (let c of contacts) {
+        // Regras de Automação
+        if (c.autoPilotEnabled === false || c.hasUnreadReply) continue;
+        
+        // Apenas estágio IDLE (Pendente) é processado automaticamente pelo tempo
+        if (c.automationStage === 0) { // IDLE
+            const lastDate = new Date(c.lastContactDate).getTime();
+            const daysPassed = (now - lastDate) / (1000 * 60 * 60 * 24);
+            
+            if (daysPassed >= c.followUpFrequencyDays) {
+                console.log(`⚡ Disparando automação para ${c.name}`);
+                
+                const msg = generateTemplateMessage(c, settings);
+                const chatId = `${formatPhone(c.phone)}@c.us`;
+                
+                try {
+                    // Envio Seguro
+                    const numberId = await client.getNumberId(chatId);
+                    const target = numberId ? numberId._serialized : chatId;
+                    await client.sendMessage(target, msg);
+                    
+                    // Atualiza Estado
+                    c.lastAutomatedMsgDate = new Date().toISOString();
+                    c.lastContactDate = new Date().toISOString();
+                    c.automationStage = 1; // WAITING_REPLY_1
+                    changed = true;
+                } catch (e) {
+                    console.error(`Erro ao enviar para ${c.name}:`, e.message);
+                }
+                
+                // Pequena pausa para evitar bloqueio
+                await new Promise(r => setTimeout(r, 5000));
+            }
+        }
+    }
+
+    if (changed) saveContacts(contacts);
+}
+
+// Roda o ciclo a cada 60 minutos (ajustável)
+setInterval(runAutomationCycle, 60 * 60 * 1000);
+// Roda uma verificação rápida 10s após ligar
+setTimeout(runAutomationCycle, 10000);
+
+// --- ENDPOINTS ---
+
 app.get('/status', (req, res) => {
     res.json({ status: clientStatus, isReady: isReady });
 });
 
-app.get('/qr', (req, res) => {
-    res.json({ qrCode: qrCodeData, ts: Date.now() });
-});
+app.get('/qr', (req, res) => res.json({ qrCode: qrCodeData, ts: Date.now() }));
 
-// Atividade (Polling de respostas)
-app.get('/activity', (req, res) => {
-    res.json(incomingActivity);
-});
-
-// Limpar Atividade
-app.get('/clear', (req, res) => {
-    for (let k in incomingActivity) delete incomingActivity[k];
-    res.json({ success: true });
-});
-
-// CRUD Contatos
-app.get('/contacts', (req, res) => {
-    const data = getContacts();
-    res.json(data);
-});
-
-app.post('/contacts', (req, res) => {
-    const contacts = req.body;
-    if (saveContacts(contacts)) {
-        res.json({ success: true });
-    } else {
-        res.status(500).json({ error: 'Falha ao salvar no disco' });
+// CHAT AO VIVO
+app.get('/chat/:phone', async (req, res) => {
+    if (!isReady) return res.status(503).json({ error: 'Offline' });
+    try {
+        const phone = formatPhone(req.params.phone);
+        const chatId = `${phone}@c.us`;
+        const chat = await client.getChatById(chatId);
+        const messages = await chat.fetchMessages({ limit: 50 });
+        
+        const history = messages.map(m => ({
+            id: m.id.id,
+            fromMe: m.fromMe,
+            body: m.body,
+            timestamp: m.timestamp
+        }));
+        
+        res.json(history);
+    } catch (e) {
+        // Se chat não existe, retorna vazio sem erro
+        res.json([]);
     }
 });
 
-// Envio de Mensagem
-function formatPhone(phone) {
-    let p = phone.replace(/\D/g, '');
-    if ((p.length === 10 || p.length === 11) && !p.startsWith('55')) {
-        p = '55' + p;
-    }
-    return p;
-}
+app.post('/toggle-automation', (req, res) => {
+    const s = getSettings();
+    s.automationActive = req.body.active;
+    saveSettings(s);
+    if (s.automationActive) runAutomationCycle(); // Força ciclo imediato
+    res.json({ success: true, active: s.automationActive });
+});
+
+// Outros Endpoints mantidos...
+app.get('/activity', (req, res) => res.json(incomingActivity));
+app.get('/clear', (req, res) => { for (let k in incomingActivity) delete incomingActivity[k]; res.json({success:true}); });
+app.get('/contacts', (req, res) => res.json(getContacts()));
+app.post('/contacts', (req, res) => { if(saveContacts(req.body)) res.json({success:true}); else res.status(500).json({error:'Erro'}); });
+app.get('/settings', (req, res) => res.json(getSettings()));
+app.post('/settings', (req, res) => { saveSettings(req.body); res.json({success:true}); });
 
 app.post('/send', async (req, res) => {
     if (!isReady) return res.status(503).json({ error: 'WhatsApp Offline' });
-    
     const { phone, message } = req.body;
-    const formatted = formatPhone(phone);
-    const chatId = `${formatted}@c.us`;
-
+    const chatId = `${formatPhone(phone)}@c.us`;
     try {
         const numberId = await client.getNumberId(chatId);
-        if (!numberId) {
-            // Tenta enviar mesmo assim se não validar (fallback)
-            await client.sendMessage(chatId, message);
-        } else {
-            await client.sendMessage(numberId._serialized, message);
-        }
-        console.log(`📤 Enviado para ${formatted}`);
+        await client.sendMessage(numberId ? numberId._serialized : chatId, message);
         res.json({ success: true });
-    } catch (e) {
-        console.error("Erro envio:", e);
-        res.status(500).json({ success: false, error: e.message });
-    }
+    } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-client.initialize().catch(e => console.error("Erro init:", e));
+client.initialize().catch(console.error);
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Servidor rodando na porta ${PORT}`);
-    console.log(`📂 DB: ${DB_FILE}`);
-    console.log(`⚙️  Config: ${SETTINGS_FILE}`);
+    console.log(`🚀 Servidor ImobiFlow rodando em porta ${PORT}`);
+    console.log('🤖 Automação de Background: ATIVA');
 });
