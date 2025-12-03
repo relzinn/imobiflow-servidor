@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { StrategyWizard } from './components/StrategyWizard';
 import { ContactModal } from './components/ContactModal';
@@ -153,7 +154,9 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
         const currentItem = reviewQueue[currentReviewIndex];
         return (
             <div className="fixed inset-0 bg-black/60 z-[95] flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95 relative">
+                    <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 font-bold p-2 text-xl leading-none" title="Fechar">✕</button>
+
                     <h3 className="font-bold text-lg mb-2 text-blue-600">Qualificar Contato</h3>
                     <p className="text-sm text-gray-500 mb-4">
                         Revise os dados e classifique o contato ({currentReviewIndex + 1} de {reviewQueue.length}).
@@ -199,14 +202,17 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
                         </div>
                     </div>
 
-                    <div className="flex justify-between items-center mt-6 pt-4 border-t">
-                        <div className="text-xs text-gray-400">Passo {currentReviewIndex + 1} / {reviewQueue.length}</div>
-                        <button 
-                            onClick={handleNextReview}
-                            className="bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700 transition-colors"
-                        >
-                            {currentReviewIndex < reviewQueue.length - 1 ? 'Salvar e Próximo' : 'Salvar e Finalizar'}
-                        </button>
+                    <div className="flex justify-between items-center mt-6 pt-4 border-t gap-3">
+                        <button onClick={onClose} className="text-gray-500 hover:text-gray-800 font-bold px-3 py-2 rounded hover:bg-gray-100">Cancelar</button>
+                        <div className="flex-1 flex justify-end items-center gap-3">
+                            <div className="text-xs text-gray-400">Passo {currentReviewIndex + 1} / {reviewQueue.length}</div>
+                            <button 
+                                onClick={handleNextReview}
+                                className="bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700 transition-colors"
+                            >
+                                {currentReviewIndex < reviewQueue.length - 1 ? 'Salvar e Próximo' : 'Salvar e Finalizar'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -218,10 +224,10 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
 
     return (
         <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg h-[600px] flex flex-col animate-in zoom-in-95">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg h-[600px] flex flex-col animate-in zoom-in-95 relative">
                 <div className="p-4 border-b flex justify-between items-center">
                     <h3 className="font-bold">Importar do WhatsApp</h3>
-                    <button onClick={onClose}>✕</button>
+                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 font-bold text-xl p-2 leading-none" title="Fechar">✕</button>
                 </div>
                 
                 <div className="p-4 border-b bg-gray-50 space-y-3">
@@ -275,6 +281,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
                     <div className="text-sm text-gray-600">{selected.size} selecionados</div>
                     <div className="flex gap-2">
                         <button onClick={() => setSelected(new Set())} className="text-red-500 text-xs hover:underline self-center mr-2">Limpar seleção</button>
+                        <button onClick={onClose} className="px-4 py-2 bg-gray-200 text-gray-700 rounded font-bold hover:bg-gray-300">Cancelar</button>
                         <button onClick={handleStartImport} disabled={selected.size === 0} className="bg-blue-600 text-white px-6 py-2 rounded font-bold disabled:opacity-50">Qualificar e Importar</button>
                     </div>
                 </div>
