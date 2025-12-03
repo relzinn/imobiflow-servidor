@@ -97,8 +97,6 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
             // Lógica de Data Inteligente
             let lastDateStr = new Date().toISOString().split('T')[0];
             if (c.timestamp) {
-                // Se temos a data da msg do zap, usamos ela.
-                // Isso permite que o sistema saiba se já venceu o prazo.
                 lastDateStr = new Date(c.timestamp * 1000).toISOString().split('T')[0];
             }
 
@@ -196,8 +194,6 @@ const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, settings: 
                         <option value="Consultivo">Consultivo</option><option value="Elegante">Elegante</option><option value="Urgente">Urgente</option><option value="Entusiasta">Entusiasta</option>
                     </select>
                 </div>
-
-                {/* API Key Removida da interface pois agora é no servidor */}
                 
                 <div className="pt-4 border-t"><h4 className="font-bold text-xs uppercase mb-2">Ciclos Padrão (Dias)</h4><div className="grid grid-cols-3 gap-2">
                     <div><label className="text-[10px]">Prop</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyOwner} onChange={e=>setS({...s,defaultFrequencyOwner:Number(e.target.value)})}/></div>
@@ -264,7 +260,6 @@ const App: React.FC = () => {
 
   const handleDelete = (id:string) => setConfirmData({show:true, msg:'Excluir contato?', action:()=>persistContacts(contacts.filter(c=>c.id!==id))});
   
-  // Ação Raio: Força teste + Reset de estágio
   const handleForceTest = async (c: Contact) => {
       const past = new Date(); past.setDate(past.getDate()- (c.followUpFrequencyDays + 2));
       const updated = { ...c, lastContactDate: past.toISOString().split('T')[0], automationStage: AutomationStage.IDLE };
@@ -273,11 +268,32 @@ const App: React.FC = () => {
       setToast({msg:'Teste disparado (Ciclo Resetado)', type:'success'});
   };
 
+  // Esta função agora APENAS marca no banco, mas não é chamada automaticamente ao abrir chat.
+  // Ela é chamada apenas se o usuário explicítamente marcar como lido ou salvar a edição.
   const handleMarkAsRead = async (c: Contact) => {
     const updated = { ...c, hasUnreadReply: false };
     const newList = contacts.map(x => x.id === c.id ? updated : x);
     setContacts(newList);
     await persistContacts(newList);
+  };
+
+  // Função para fechar o chat e decidir se reabre o inbox
+  const handleCloseChat = () => {
+      setChatContact(null);
+      // Se houver mensagens não lidas, reabre o inbox para o usuário decidir o que fazer
+      if (contacts.some(c => c.hasUnreadReply)) {
+          setIsInboxOpen(true);
+      }
+  };
+
+  const handleLogout = async () => {
+    try {
+        await fetch(`${settings!.serverUrl}/logout`, { method: 'POST', headers: getHeaders() });
+        setServerStatus(false);
+        setToast({msg: 'Desconectado!', type: 'success'});
+    } catch (e) {
+        setToast({msg: 'Erro ao desconectar', type: 'error'});
+    }
   };
 
   const sendManual = async (c: Contact) => {
@@ -319,14 +335,11 @@ const App: React.FC = () => {
     setToast({ msg: `${uniqueNew.length} importados`, type: 'success' });
   };
 
-  const handleKeepContact = async (c: Contact) => {
-    const updated = {
-        ...c,
-        hasUnreadReply: false,
-        lastContactDate: new Date().toISOString().split('T')[0],
-        automationStage: AutomationStage.IDLE
-    };
-    await persistContacts(contacts.map(x => x.id === c.id ? updated : x));
+  // Atualizar contato após resposta (abrindo modal para editar obs)
+  const handleUpdateContact = (c: Contact) => {
+      setEditingContact(c);
+      setIsModalOpen(true);
+      // Obs: A notificação só será limpa quando o usuário salvar o modal.
   };
 
   const handleFinalizeContact = async (c: Contact) => {
@@ -348,7 +361,8 @@ const App: React.FC = () => {
             <h1 className="text-xl font-bold mb-8">ImobiFlow</h1>
             <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-4">
                 <div className="text-xs font-bold text-slate-500 uppercase mb-2">Status do Servidor</div>
-                <div className="flex justify-between items-center"><span>WhatsApp</span>{serverStatus?<span className="text-green-400 text-xs">● Online</span>:<button onClick={()=>setIsQRCodeOpen(true)} className="text-red-400 text-xs">● Conectar</button>}</div>
+                <div className="flex justify-between items-center mb-2"><span>WhatsApp</span>{serverStatus?<span className="text-green-400 text-xs">● Online</span>:<button onClick={()=>setIsQRCodeOpen(true)} className="text-red-400 text-xs">● Conectar</button>}</div>
+                {serverStatus && <button onClick={handleLogout} className="w-full text-xs bg-red-900/50 text-red-200 border border-red-900 rounded py-1 hover:bg-red-900">Desconectar</button>}
             </div>
             <div className={`p-4 rounded-xl border mb-4 ${settings?.automationActive?'bg-indigo-900/40 border-indigo-500':'bg-slate-800'}`}>
                 <div className="flex justify-between items-center"><span className="text-xs font-bold text-slate-300">Automação</span><button onClick={toggleAutomation} className={`w-10 h-5 rounded-full relative ${settings?.automationActive?'bg-indigo-500':'bg-slate-600'}`}><div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${settings?.automationActive?'left-6':'left-1'}`}/></button></div>
@@ -369,15 +383,11 @@ const App: React.FC = () => {
                 {['ALL',...Object.values(ContactType)].map(t => {
                     const typeContacts = contacts.filter(c => t === 'ALL' || c.type === t);
                     const total = typeContacts.length;
-                    // Count contacts in automation waiting stage (1 or 2)
                     const waiting = typeContacts.filter(c => c.automationStage === 1 || c.automationStage === 2).length;
-                    
                     return (
                         <button key={t} onClick={()=>setFilterType(t)} className={`px-4 py-1 rounded-full text-sm font-bold flex items-center gap-2 ${filterType===t?'bg-blue-600 text-white':'bg-white border'}`}>
                             {t==='ALL'?'Todos':t}
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full ${filterType===t ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'}`}>
-                                {waiting} / {total}
-                            </span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full ${filterType===t ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'}`}>{waiting} / {total}</span>
                         </button>
                     );
                 })}
@@ -416,7 +426,7 @@ const App: React.FC = () => {
                                         ) : (
                                             <>
                                                 <button onClick={()=>handleForceTest(c)} className="p-2 bg-yellow-50 text-yellow-600 rounded" title="Envio de mensagem agora"><Icons.Flash/></button>
-                                                <button onClick={()=>{handleMarkAsRead(c);setChatContact(c)}} className="p-2 bg-green-50 text-green-600 rounded" title="Abrir Chat"><Icons.WhatsApp/></button>
+                                                <button onClick={()=>{setChatContact(c)}} className="p-2 bg-green-50 text-green-600 rounded" title="Abrir Chat (Não marca lido)"><Icons.WhatsApp/></button>
                                                 <button onClick={()=>{setSelectedId(c.id);generateFollowUpMessage(c,settings!,false).then(setGenMsg)}} className="p-2 bg-blue-50 text-blue-600 rounded" title="Gerar Mensagem Manual"><Icons.Message/></button>
                                                 <button onClick={()=>{setEditingContact(c);setIsModalOpen(true)}} className="p-2 bg-gray-50 text-gray-600 rounded" title="Editar Contato"><Icons.Users/></button>
                                                 <button onClick={()=>handleDelete(c.id)} className="p-2 bg-red-50 text-red-600 rounded" title="Excluir Contato"><Icons.Trash/></button>
@@ -437,8 +447,35 @@ const App: React.FC = () => {
             <ImportModal isOpen={isImportOpen} onClose={()=>setIsImportOpen(false)} serverUrl={settings?.serverUrl||''} existingContacts={contacts} onImport={handleImportContacts} settings={settings!}/>
             <QRCodeModal isOpen={isQRCodeOpen} onClose={()=>setIsQRCodeOpen(false)} onConnected={()=>{setServerStatus(true);setIsQRCodeOpen(false)}} serverUrl={settings?.serverUrl} onUrlChange={u=>persistSettings({...settings!,serverUrl:u})}/>
             <SettingsModal isOpen={isSettingsOpen} onClose={()=>setIsSettingsOpen(false)} settings={settings!} onSave={persistSettings}/>
-            {isInboxOpen && <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col animate-in zoom-in-95"><div className="p-4 border-b flex justify-between"><h3 className="font-bold">Inbox ({unread.length})</h3><button onClick={()=>setIsInboxOpen(false)}>✕</button></div><div className="p-4 overflow-y-auto space-y-3">{unread.map(c=>(<div key={c.id} className="border p-3 bg-yellow-50 rounded-lg"><div className="font-bold">{c.name}</div><div className="text-sm my-2 italic text-gray-700">"{c.lastReplyContent||'Nova mensagem'}"</div><div className="flex gap-2"><button onClick={()=>{setIsInboxOpen(false);setChatContact(c);handleMarkAsRead(c)}} className="flex-1 bg-green-600 text-white py-1 rounded text-xs font-bold" title="Abrir chat e marcar como lido">Chat</button><button onClick={()=>{setIsInboxOpen(false);handleKeepContact(c)}} className="flex-1 bg-blue-600 text-white py-1 rounded text-xs font-bold" title="Editar obs e manter automação">Atualizar</button><button onClick={()=>{setIsInboxOpen(false);setConfirmData({show:true,msg:'Finalizar e excluir?',action:()=>handleFinalizeContact(c)})}} className="flex-1 bg-red-600 text-white py-1 rounded text-xs font-bold" title="Excluir contato">Finalizar</button></div></div>))}</div></div></div>}
-            {chatContact && <ChatModal contact={chatContact} onClose={()=>setChatContact(null)} serverUrl={settings?.serverUrl||''} />}
+            
+            {/* INBOX MODAL */}
+            {isInboxOpen && (
+                <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col animate-in zoom-in-95">
+                        <div className="p-4 border-b flex justify-between"><h3 className="font-bold">Inbox ({unread.length})</h3><button onClick={()=>setIsInboxOpen(false)}>✕</button></div>
+                        <div className="p-4 overflow-y-auto space-y-3">
+                            {unread.map(c=>(
+                                <div key={c.id} className="border p-3 bg-yellow-50 rounded-lg">
+                                    <div className="font-bold">{c.name}</div>
+                                    <div className="text-sm my-2 italic text-gray-700">"{c.lastReplyContent||'Nova mensagem'}"</div>
+                                    <div className="flex gap-2">
+                                        {/* ABRIR CHAT: Fecha Inbox, Abre Chat. Não marca lido. */}
+                                        <button onClick={()=>{setIsInboxOpen(false);setChatContact(c);}} className="flex-1 bg-green-600 text-white py-1 rounded text-xs font-bold" title="Abrir Chat sem marcar como lido">Chat</button>
+                                        
+                                        {/* ATUALIZAR: Fecha Inbox, Abre Edição. Salvar a edição marca como lido. */}
+                                        <button onClick={()=>{setIsInboxOpen(false);handleUpdateContact(c);}} className="flex-1 bg-blue-600 text-white py-1 rounded text-xs font-bold" title="Editar obs e atualizar status">Atualizar</button>
+                                        
+                                        {/* FINALIZAR: Confirmação e Exclusão */}
+                                        <button onClick={()=>{setIsInboxOpen(false);setConfirmData({show:true,msg:'Finalizar e excluir este contato?',action:()=>handleFinalizeContact(c)})}} className="flex-1 bg-red-600 text-white py-1 rounded text-xs font-bold" title="Excluir contato e remover notificação">Finalizar</button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+            
+            {chatContact && <ChatModal contact={chatContact} onClose={handleCloseChat} serverUrl={settings?.serverUrl||''} />}
             {confirmData.show && <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center"><div className="bg-white p-6 rounded shadow-xl text-center"><p className="mb-4 font-bold">{confirmData.msg}</p><div className="flex gap-2 justify-center"><button onClick={()=>setConfirmData({show:false})} className="px-4 py-2 bg-gray-200 rounded">Cancelar</button><button onClick={()=>{confirmData.action();setConfirmData({show:false})}} className="px-4 py-2 bg-red-600 text-white rounded font-bold">Sim</button></div></div></div>}
             {toast && <div className={`fixed top-4 right-4 z-[80] px-4 py-2 rounded text-white font-bold ${toast.type==='success'?'bg-green-600':'bg-red-600'}`}>{toast.msg}</div>}
         </main>

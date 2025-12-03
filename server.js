@@ -81,18 +81,28 @@ async function generateAIMessage(contact, settings, stage = 0) {
 
 function generateTemplateFallback(contact, settings, stage = 0) {
     const agent = settings.agentName || "Seu Corretor";
-    const noteContext = contact.notes && contact.notes.length < 50 ? ` (${contact.notes})` : "";
+    // Extrai algo entre parenteses ou usa a nota inteira se curta, senao nada.
+    // Lógica segura para template: NUNCA usar a nota crua em templates fixos para evitar gafes.
+    // Usamos frases genéricas inteligentes.
     
     if (stage === 99) {
         return `Olá ${contact.name}, como não tivemos retorno, vou encerrar nosso contato por aqui para não incomodar. Se precisar de algo no futuro, estou à disposição!`;
     }
 
     if (stage === 1) { // Cobrança
-        return `Olá ${contact.name}, conseguiu ver minha mensagem anterior? Gostaria apenas de confirmar se ainda tem interesse${noteContext}.`;
+        return `Olá ${contact.name}, conseguiu ver minha mensagem anterior? Gostaria apenas de confirmar se ainda tem interesse.`;
     }
 
     // Padrão
-    return `Olá ${contact.name}, aqui é ${agent}. Passando para saber se continuamos com o assunto${noteContext}.`;
+    let specificPart = "continuamos com o assunto";
+    if (contact.type === 'Proprietário') specificPart = "seu imóvel ainda está disponível";
+    if (contact.type === 'Construtor') specificPart = "temos novas oportunidades de áreas";
+    if (contact.type === 'Cliente/Comprador') specificPart = "encontrei opções no seu perfil";
+
+    // Se tiver nota curta, tentamos inserir de forma segura (apenas se for offline mode e o usuario confiar)
+    // Mas por segurança padrão, usamos o texto generico acima.
+    
+    return `Olá ${contact.name}, aqui é ${agent}. Passando para saber se ${specificPart}. Podemos falar?`;
 }
 
 // --- FUNÇÕES AUXILIARES ---
@@ -279,6 +289,18 @@ app.post('/goodbye', async (req, res) => {
     res.json({success:true});
 });
 
+app.post('/logout', async (req, res) => {
+    try {
+        await client.logout();
+    } catch (e) { console.error("Logout error", e); }
+    // Reinicia o client para permitir nova conexão
+    try { await client.destroy(); } catch(e){}
+    client.initialize();
+    isReady = false;
+    clientStatus = 'initializing';
+    res.json({success:true});
+});
+
 app.get('/chat/:phone', async (req, res) => {
     if (!isReady) return res.json([]);
     try {
@@ -298,7 +320,9 @@ app.get('/whatsapp-contacts', async (req, res) => {
         for(const c of chats) {
             if(!c.isGroup && !seen.has(c.id.user)) {
                 seen.add(c.id.user);
-                unique.push({ name: c.name || c.id.user, phone: c.id.user, timestamp: c.timestamp });
+                // Tenta pegar o timestamp da última mensagem do chat
+                const lastMsgTime = c.timestamp; 
+                unique.push({ name: c.name || c.id.user, phone: c.id.user, timestamp: lastMsgTime });
             }
         }
         res.json(unique);
