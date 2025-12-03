@@ -335,7 +335,7 @@ const App: React.FC = () => {
             <h1 className="text-xl font-bold mb-8">ImobiFlow</h1>
             <div className="space-y-4">
                 <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
-                    <div className="text-xs font-bold text-slate-500 uppercase mb-2">Server</div>
+                    <div className="text-xs font-bold text-slate-500 uppercase mb-2">Status do Servidor</div>
                     <div className="flex justify-between items-center">
                         <span>WhatsApp</span>
                         {serverStatus ? <span className="text-green-400 text-xs">● Online</span> : <button onClick={() => setIsQRCodeOpen(true)} className="text-red-400 text-xs">● Conectar</button>}
@@ -343,8 +343,8 @@ const App: React.FC = () => {
                 </div>
                 <div className={`p-4 rounded-xl border ${settings?.automationActive ? 'bg-indigo-900/40 border-indigo-500' : 'bg-slate-800 border-slate-700'}`}>
                     <div className="flex justify-between items-center">
-                        <span className="text-xs font-bold text-slate-300 uppercase">Piloto</span>
-                        <button onClick={toggleAutomation} className={`w-10 h-5 rounded-full relative ${settings?.automationActive ? 'bg-indigo-500' : 'bg-slate-600'}`}>
+                        <span className="text-xs font-bold text-slate-300 uppercase">Automação</span>
+                        <button title={settings?.automationActive ? "Desligar Automação" : "Ligar Automação"} onClick={toggleAutomation} className={`w-10 h-5 rounded-full relative ${settings?.automationActive ? 'bg-indigo-500' : 'bg-slate-600'}`}>
                             <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${settings?.automationActive ? 'left-6' : 'left-1'}`} />
                         </button>
                     </div>
@@ -360,7 +360,14 @@ const App: React.FC = () => {
         <main className="flex-1 p-8 overflow-y-auto">
             <header className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Contatos</h2>
-                <button onClick={() => { setEditingContact(null); setIsModalOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded font-bold" title="Adicionar novo contato"><Icons.Plus /> Novo</button>
+                <button 
+                    onClick={() => { setEditingContact(null); setIsModalOpen(true); }} 
+                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 py-2.5 rounded-full font-bold shadow-lg shadow-blue-500/30 flex items-center gap-2 transition-all hover:scale-105 active:scale-95" 
+                    title="Adicionar novo contato para follow-up"
+                >
+                    <Icons.Plus /> 
+                    <span>Novo Contato</span>
+                </button>
             </header>
 
             <div className="flex gap-2 mb-4">
