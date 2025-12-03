@@ -290,21 +290,31 @@ app.post('/send', async (req, res) => {
 app.get('/whatsapp-contacts', async (req, res) => {
     if (!isReady) return res.status(503).json({ error: 'Offline' });
     try {
-        const contacts = await client.getContacts();
-        console.log(`🔎 Importação: Encontrados ${contacts.length} contatos brutos.`);
+        // CORREÇÃO: Usamos getChats() em vez de getContacts() para evitar erros do WWebJS
+        // getChats retorna todas as conversas ativas, que é mais relevante para o CRM
+        const chats = await client.getChats();
+        console.log(`🔎 Importação: Encontrados ${chats.length} conversas.`);
         
-        // Filtra contatos pessoais. 
-        // Importante: Removemos a exigência de nome para não vir vazio. 
-        // Se não tiver nome, usa o número ou pushname.
-        const filtered = contacts
-            .filter(c => c.id.server === 'c.us' && !c.isMe && !c.isGroup)
+        // Filtra grupos e mapeia para o formato esperado
+        const filtered = chats
+            .filter(c => !c.isGroup)
             .map(c => ({
-                name: c.name || c.pushname || c.number || c.id.user,
-                phone: c.number || c.id.user
+                name: c.name || c.id.user,
+                phone: c.id.user
             }));
+
+        // Remove duplicatas
+        const unique = [];
+        const seen = new Set();
+        for(const c of filtered) {
+            if(!seen.has(c.phone)) {
+                seen.add(c.phone);
+                unique.push(c);
+            }
+        }
             
-        console.log(`✅ Importação: ${filtered.length} contatos válidos processados.`);
-        res.json(filtered);
+        console.log(`✅ Importação: ${unique.length} contatos válidos processados.`);
+        res.json(unique);
     } catch (e) {
         console.error("Erro importação:", e);
         res.status(500).json({ error: e.message });
