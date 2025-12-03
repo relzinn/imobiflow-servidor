@@ -26,6 +26,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
     // Form do Review
     const [reviewName, setReviewName] = useState('');
     const [reviewNotes, setReviewNotes] = useState('');
+    const [reviewType, setReviewType] = useState<ContactType>(ContactType.CLIENT);
 
     useEffect(() => {
         if (isOpen) {
@@ -69,9 +70,10 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
         setIsReviewing(true);
         setCurrentReviewIndex(0);
         
-        // Prepara form para o primeiro (já preenche o nome se tiver)
+        // Prepara form para o primeiro
         setReviewName(selectedList[0].name || '');
         setReviewNotes('');
+        setReviewType(targetType); // Começa com o tipo selecionado na lista, mas pode mudar
     };
 
     // 2. Salva o contato revisado e vai pro próximo
@@ -89,7 +91,8 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
         const updatedContact = {
             ...current,
             name: reviewName,
-            customNotes: reviewNotes // Guarda nota customizada
+            customNotes: reviewNotes,
+            type: reviewType // Salva o tipo específico escolhido
         };
 
         const newReviewedList = [...reviewedContacts, updatedContact];
@@ -99,9 +102,10 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
         if (currentReviewIndex < reviewQueue.length - 1) {
             const nextIndex = currentReviewIndex + 1;
             setCurrentReviewIndex(nextIndex);
-            // Prepara o próximo: Preenche o nome automaticamente para facilitar
+            // Prepara o próximo
             setReviewName(reviewQueue[nextIndex].name || '');
             setReviewNotes('');
+            setReviewType(targetType); // Reseta para o padrão
         } else {
             // Acabou a fila
             finalizeImport(newReviewedList);
@@ -110,25 +114,30 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
 
     // 3. Finaliza tudo
     const finalizeImport = (finalList: any[]) => {
-        let freq = 30;
-        if (targetType === ContactType.OWNER) freq = settings.defaultFrequencyOwner;
-        else if (targetType === ContactType.BUILDER) freq = settings.defaultFrequencyBuilder;
-        else freq = settings.defaultFrequencyClient;
+        const newContacts: Contact[] = finalList.map(c => {
+            // Calcula a frequência baseada no tipo ESPECÍFICO do contato
+            let freq = 30;
+            const specificType = c.type || targetType;
+            
+            if (specificType === ContactType.OWNER) freq = settings.defaultFrequencyOwner;
+            else if (specificType === ContactType.BUILDER) freq = settings.defaultFrequencyBuilder;
+            else freq = settings.defaultFrequencyClient;
 
-        const newContacts: Contact[] = finalList.map(c => ({
-            id: generateId(),
-            name: c.name,
-            phone: c.phone.startsWith('55') ? c.phone : '55' + c.phone,
-            type: targetType,
-            notes: c.customNotes || 'Importado do WhatsApp', 
-            lastContactDate: c.timestamp 
-                ? new Date(c.timestamp * 1000).toISOString().split('T')[0] 
-                : new Date().toISOString().split('T')[0],
-            followUpFrequencyDays: freq,
-            automationStage: AutomationStage.IDLE,
-            autoPilotEnabled: true,
-            hasUnreadReply: false
-        }));
+            return {
+                id: generateId(),
+                name: c.name,
+                phone: c.phone.startsWith('55') ? c.phone : '55' + c.phone,
+                type: specificType,
+                notes: c.customNotes || 'Importado do WhatsApp', 
+                lastContactDate: c.timestamp 
+                    ? new Date(c.timestamp * 1000).toISOString().split('T')[0] 
+                    : new Date().toISOString().split('T')[0],
+                followUpFrequencyDays: freq,
+                automationStage: AutomationStage.IDLE,
+                autoPilotEnabled: true,
+                hasUnreadReply: false
+            };
+        });
 
         onImport(newContacts);
         onClose();
@@ -147,7 +156,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
                     <h3 className="font-bold text-lg mb-2 text-blue-600">Qualificar Contato</h3>
                     <p className="text-sm text-gray-500 mb-4">
-                        Revise os dados e adicione uma observação ({currentReviewIndex + 1} de {reviewQueue.length}).
+                        Revise os dados e classifique o contato ({currentReviewIndex + 1} de {reviewQueue.length}).
                     </p>
                     
                     <div className="bg-gray-100 p-3 rounded mb-4 text-center">
@@ -166,6 +175,18 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
                                 onChange={e => setReviewName(e.target.value)}
                             />
                         </div>
+
+                        <div>
+                             <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Tipo de Contato</label>
+                             <select 
+                                className="w-full border p-2 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                value={reviewType} 
+                                onChange={e => setReviewType(e.target.value as ContactType)}
+                             >
+                                {Object.values(ContactType).map(t => <option key={t} value={t}>{t}</option>)}
+                             </select>
+                        </div>
+
                         <div>
                             <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Observação (Para a IA)</label>
                             <textarea 
@@ -222,10 +243,11 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
                         )}
                     </div>
                     <div className="flex items-center gap-2">
-                         <span className="text-sm font-bold text-gray-500">Importar como:</span>
+                         <span className="text-sm font-bold text-gray-500">Tipo padrão:</span>
                          <select className="border rounded p-1 text-sm flex-1" value={targetType} onChange={e => setTargetType(e.target.value as ContactType)}>
                             {Object.values(ContactType).map(t => <option key={t} value={t}>{t}</option>)}
                          </select>
+                         <span className="text-[10px] text-gray-400">(Pode alterar depois)</span>
                     </div>
                 </div>
 
