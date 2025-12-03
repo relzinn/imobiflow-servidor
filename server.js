@@ -10,6 +10,7 @@ const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3001;
 const DB_FILE = path.join(__dirname, 'database.json');
+const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 
 // CORS Total
 app.use(cors({ origin: '*' }));
@@ -40,6 +41,31 @@ function saveContacts(contacts) {
         return false;
     }
 }
+
+// --- CONFIGURAÇÕES (SETTINGS JSON) ---
+
+app.get('/settings', (req, res) => {
+    try {
+        if (fs.existsSync(SETTINGS_FILE)) {
+            const data = fs.readFileSync(SETTINGS_FILE, 'utf8');
+            res.json(JSON.parse(data));
+        } else {
+            res.status(404).json({ error: 'Settings not found' });
+        }
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+app.post('/settings', (req, res) => {
+    try {
+        fs.writeFileSync(SETTINGS_FILE, JSON.stringify(req.body, null, 2));
+        res.json({ success: true });
+    } catch (e) {
+        console.error("Erro ao salvar Settings:", e);
+        res.status(500).json({ error: e.message });
+    }
+});
 
 // --- WHATSAPP SETUP ---
 
@@ -189,5 +215,6 @@ client.initialize().catch(e => console.error("Erro init:", e));
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Servidor rodando na porta ${PORT}`);
-    console.log(`📂 Banco de dados: ${DB_FILE}`);
+    console.log(`📂 DB: ${DB_FILE}`);
+    console.log(`⚙️  Config: ${SETTINGS_FILE}`);
 });
