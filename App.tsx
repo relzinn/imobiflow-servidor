@@ -28,6 +28,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
     const [reviewName, setReviewName] = useState('');
     const [reviewNotes, setReviewNotes] = useState('');
     const [reviewType, setReviewType] = useState<ContactType>(ContactType.CLIENT);
+    const [reviewTone, setReviewTone] = useState('');
 
     useEffect(() => {
         if (isOpen) {
@@ -65,16 +66,15 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
         
         if (selectedList.length === 0) return;
 
-        // MUDANÇA: Todos os contatos selecionados vão para a fila de revisão, obrigando a qualificação.
         setReviewedContacts([]); 
         setReviewQueue(selectedList);
         setIsReviewing(true);
         setCurrentReviewIndex(0);
         
-        // Prepara form para o primeiro
         setReviewName(selectedList[0].name || '');
         setReviewNotes('');
-        setReviewType(targetType); // Começa com o tipo selecionado na lista, mas pode mudar
+        setReviewType(targetType); 
+        setReviewTone('');
     };
 
     // 2. Salva o contato revisado e vai pro próximo
@@ -93,7 +93,8 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
             ...current,
             name: reviewName,
             customNotes: reviewNotes,
-            type: reviewType // Salva o tipo específico escolhido
+            type: reviewType,
+            messageTone: reviewTone || undefined
         };
 
         const newReviewedList = [...reviewedContacts, updatedContact];
@@ -106,9 +107,9 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
             // Prepara o próximo
             setReviewName(reviewQueue[nextIndex].name || '');
             setReviewNotes('');
-            setReviewType(targetType); // Reseta para o padrão
+            setReviewType(targetType); 
+            setReviewTone('');
         } else {
-            // Acabou a fila
             finalizeImport(newReviewedList);
         }
     };
@@ -116,7 +117,6 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
     // 3. Finaliza tudo
     const finalizeImport = (finalList: any[]) => {
         const newContacts: Contact[] = finalList.map(c => {
-            // Calcula a frequência baseada no tipo ESPECÍFICO do contato
             let freq = 30;
             const specificType = c.type || targetType;
             
@@ -134,6 +134,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
                     ? new Date(c.timestamp * 1000).toISOString().split('T')[0] 
                     : new Date().toISOString().split('T')[0],
                 followUpFrequencyDays: freq,
+                messageTone: c.messageTone,
                 automationStage: AutomationStage.IDLE,
                 autoPilotEnabled: true,
                 hasUnreadReply: false
@@ -143,18 +144,19 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
         onImport(newContacts);
         onClose();
         
-        // GATILHO: Dispara automação no servidor imediatamente
         fetch(`${serverUrl}/trigger-automation`, { headers: {'ngrok-skip-browser-warning': 'true'} }).catch(console.error);
     };
 
     if (!isOpen) return null;
+
+    const toneOptions = ['Casual', 'Formal', 'Persuasivo', 'Amigável', 'Consultivo', 'Urgente', 'Entusiasta', 'Elegante'];
 
     // --- MODO DE REVISÃO (UI) ---
     if (isReviewing) {
         const currentItem = reviewQueue[currentReviewIndex];
         return (
             <div className="fixed inset-0 bg-black/60 z-[95] flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95 relative">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95 relative overflow-y-auto max-h-[90vh]">
                     <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 font-bold p-2 text-xl leading-none" title="Fechar">✕</button>
 
                     <h3 className="font-bold text-lg mb-2 text-blue-600">Qualificar Contato</h3>
@@ -187,6 +189,18 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
                                 onChange={e => setReviewType(e.target.value as ContactType)}
                              >
                                 {Object.values(ContactType).map(t => <option key={t} value={t}>{t}</option>)}
+                             </select>
+                        </div>
+                        
+                        <div>
+                             <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Tom de Voz</label>
+                             <select 
+                                className="w-full border p-2 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                value={reviewTone} 
+                                onChange={e => setReviewTone(e.target.value)}
+                             >
+                                <option value="">Padrão (Usar Global)</option>
+                                {toneOptions.map(t => <option key={t} value={t}>{t}</option>)}
                              </select>
                         </div>
 
@@ -227,7 +241,9 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg h-[600px] flex flex-col animate-in zoom-in-95 relative">
                 <div className="p-4 border-b flex justify-between items-center">
                     <h3 className="font-bold">Importar do WhatsApp</h3>
-                    <button onClick={onClose} className="text-gray-500 hover:text-gray-700 font-bold text-xl p-2 leading-none" title="Fechar">✕</button>
+                    <div className="flex gap-2">
+                        <button onClick={onClose} className="text-gray-400 hover:text-gray-700 font-bold text-2xl leading-none" title="Fechar">✕</button>
+                    </div>
                 </div>
                 
                 <div className="p-4 border-b bg-gray-50 space-y-3">
@@ -584,7 +600,13 @@ const App: React.FC = () => {
   const handleForceTest = async (c: Contact) => {
       const pastDate = new Date();
       pastDate.setDate(pastDate.getDate() - (c.followUpFrequencyDays + 2)); 
-      const updated = {...c, lastContactDate: pastDate.toISOString().split('T')[0]};
+      
+      // RESET TOTAL DA DATA E DO ESTÁGIO para garantir que o servidor veja como 'novo ciclo pendente'
+      const updated = {
+          ...c, 
+          lastContactDate: pastDate.toISOString().split('T')[0],
+          automationStage: AutomationStage.IDLE // Reseta para 0
+      };
       
       const newList = contacts.map(x => x.id === c.id ? updated : x);
       await persistContacts(newList);

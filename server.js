@@ -1,3 +1,4 @@
+
 const express = require('express');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
@@ -25,7 +26,8 @@ app.use(express.json());
 async function generateAIMessage(contact, settings) {
     const agent = settings.agentName || "Seu Corretor";
     const agency = settings.agencyName || "nossa imobiliária";
-    const tone = settings.messageTone || "Casual";
+    // USA TOM INDIVIDUAL SE TIVER, SENÃO USA GLOBAL
+    const tone = contact.messageTone || settings.messageTone || "Casual";
 
     // Se não tiver chave configurada pela equipe, usa template de fallback
     if (!TEAM_GEMINI_API_KEY || TEAM_GEMINI_API_KEY === "AIzaSy..." || TEAM_GEMINI_API_KEY.length < 10) {

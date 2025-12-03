@@ -20,6 +20,7 @@ export interface Contact {
   lastContactDate: string;
   notes: string;
   followUpFrequencyDays: number;
+  messageTone?: string; // Tom de voz específico para este contato
   
   // Automação e Sync
   autoPilotEnabled?: boolean;

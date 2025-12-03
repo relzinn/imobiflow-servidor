@@ -19,6 +19,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
   const [lastContactDate, setLastContactDate] = useState('');
   const [frequencyDays, setFrequencyDays] = useState<number>(30);
   const [phoneError, setPhoneError] = useState('');
+  const [messageTone, setMessageTone] = useState<string>(''); // Vazio = Padrão
 
   useEffect(() => {
     if (initialContact) {
@@ -28,15 +29,15 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       setNotes(initialContact.notes);
       setLastContactDate(initialContact.lastContactDate.split('T')[0]);
       setFrequencyDays(initialContact.followUpFrequencyDays);
+      setMessageTone(initialContact.messageTone || '');
     } else {
       setName('');
       setPhone('');
-      // Usa o defaultType se fornecido (vindo do filtro), senão usa CLIENT
       setType(defaultType || ContactType.CLIENT);
       setNotes('');
       setLastContactDate(new Date().toISOString().split('T')[0]);
+      setMessageTone('');
       
-      // Tenta definir a frequência baseada no tipo padrão selecionado
       const targetType = defaultType || ContactType.CLIENT;
       if (settings) {
           if (targetType === ContactType.OWNER) setFrequencyDays(settings.defaultFrequencyOwner);
@@ -51,7 +52,6 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
 
   const validateAndFormatPhone = (input: string) => {
       let clean = input.replace(/\D/g, '');
-      // Se tiver 10 ou 11 dígitos, provavelmente é Brasil sem 55. Adiciona.
       if (clean.length === 10 || clean.length === 11) {
           clean = '55' + clean;
       }
@@ -75,19 +75,22 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       notes,
       lastContactDate,
       followUpFrequencyDays: frequencyDays,
+      messageTone: messageTone || undefined, // Se vazio, não salva
       automationStage: initialContact?.automationStage ?? AutomationStage.IDLE,
       autoPilotEnabled: initialContact?.autoPilotEnabled ?? true,
       lastReplyTimestamp: initialContact?.lastReplyTimestamp,
-      hasUnreadReply: false // FORÇA A LIMPEZA DO STATUS DE NÃO LIDO AO SALVAR
+      hasUnreadReply: false 
     });
     onClose();
   };
 
   if (!isOpen) return null;
 
+  const toneOptions = ['Casual', 'Formal', 'Persuasivo', 'Amigável', 'Consultivo', 'Urgente', 'Entusiasta', 'Elegante'];
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 animate-in zoom-in-95">
+      <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
         <h2 className="text-xl font-bold mb-4">{initialContact ? 'Editar' : 'Novo'} Contato</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -122,6 +125,15 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
                  <label className="block text-xs font-bold text-gray-500 mb-1">Ciclo (Dias)</label>
                  <input type="number" className="w-full border rounded p-2" value={frequencyDays} onChange={e => setFrequencyDays(Number(e.target.value))} />
              </div>
+          </div>
+          
+          <div>
+             <label className="block text-xs font-bold text-gray-500 mb-1">Tom de Voz</label>
+             <select className="w-full border rounded p-2" value={messageTone} onChange={e => setMessageTone(e.target.value)}>
+                <option value="">Padrão (Usar Global)</option>
+                {toneOptions.map(t => <option key={t} value={t}>{t}</option>)}
+             </select>
+             <p className="text-[10px] text-gray-400 mt-1">Define como a IA fala com este contato específico.</p>
           </div>
           
           <div>
