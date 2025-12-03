@@ -23,6 +23,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
             // Limpa a seleção anterior ao abrir
             setSelected(new Set());
             setLoading(true);
+            setSearchTerm(''); // Limpa busca
             fetch(`${serverUrl}/whatsapp-contacts`, { headers: {'ngrok-skip-browser-warning': 'true'} })
                 .then(res => res.json())
                 .then(data => {
@@ -68,6 +69,9 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
 
         onImport(newContacts);
         onClose();
+        
+        // GATILHO: Dispara automação no servidor imediatamente para pegar contatos vencidos
+        fetch(`${serverUrl}/trigger-automation`, { headers: {'ngrok-skip-browser-warning': 'true'} }).catch(console.error);
     };
 
     if (!isOpen) return null;
@@ -83,12 +87,23 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
                 </div>
                 
                 <div className="p-4 border-b bg-gray-50 space-y-3">
-                    <input 
-                        className="w-full border rounded p-2" 
-                        placeholder="Buscar por nome..." 
-                        value={searchTerm} 
-                        onChange={e => setSearchTerm(e.target.value)} 
-                    />
+                    <div className="relative">
+                        <input 
+                            className="w-full border rounded p-2 pr-8" 
+                            placeholder="Buscar por nome..." 
+                            value={searchTerm} 
+                            onChange={e => setSearchTerm(e.target.value)} 
+                        />
+                        {searchTerm && (
+                            <button 
+                                onClick={() => setSearchTerm('')}
+                                className="absolute right-2 top-2 text-gray-400 hover:text-gray-600 font-bold"
+                                title="Limpar busca"
+                            >
+                                ✕
+                            </button>
+                        )}
+                    </div>
                     <div className="flex items-center gap-2">
                          <span className="text-sm font-bold text-gray-500">Importar como:</span>
                          <select className="border rounded p-1 text-sm flex-1" value={targetType} onChange={e => setTargetType(e.target.value as ContactType)}>
@@ -244,6 +259,25 @@ const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, settings: 
                             <option value="Consultivo">Consultivo</option><option value="Elegante">Elegante</option><option value="Urgente">Urgente</option><option value="Entusiasta">Entusiasta</option>
                         </select>
                     </div>
+
+                    <div className="pt-4 border-t">
+                        <label className="text-xs font-bold text-gray-500 uppercase block mb-2">Ciclos de Follow-up (Dias)</label>
+                        <div className="grid grid-cols-3 gap-2">
+                             <div>
+                                 <label className="text-[10px] text-gray-600">Proprietário</label>
+                                 <input type="number" className="w-full border p-2 rounded text-sm" value={localSettings.defaultFrequencyOwner} onChange={e => setLocalSettings({...localSettings, defaultFrequencyOwner: Number(e.target.value)})} />
+                             </div>
+                             <div>
+                                 <label className="text-[10px] text-gray-600">Construtor</label>
+                                 <input type="number" className="w-full border p-2 rounded text-sm" value={localSettings.defaultFrequencyBuilder} onChange={e => setLocalSettings({...localSettings, defaultFrequencyBuilder: Number(e.target.value)})} />
+                             </div>
+                             <div>
+                                 <label className="text-[10px] text-gray-600">Cliente</label>
+                                 <input type="number" className="w-full border p-2 rounded text-sm" value={localSettings.defaultFrequencyClient} onChange={e => setLocalSettings({...localSettings, defaultFrequencyClient: Number(e.target.value)})} />
+                             </div>
+                        </div>
+                    </div>
+
                 </div>
                 <div className="flex justify-end gap-2 mt-6">
                     <button onClick={onClose} className="px-4 py-2 bg-gray-100 rounded">Cancelar</button>
@@ -517,7 +551,9 @@ const App: React.FC = () => {
                     <tbody className="divide-y text-sm">
                         {filtered.map(c => {
                              const lastDate = new Date(c.lastContactDate || Date.now());
+                             const nextDate = new Date(lastDate.getTime() + (c.followUpFrequencyDays * 24 * 60 * 60 * 1000));
                              const daysWait = Math.ceil((Date.now() - lastDate.getTime())/(1000*60*60*24));
+                             const isLate = daysWait >= c.followUpFrequencyDays;
                              
                              return (
                             <React.Fragment key={c.id}>
@@ -525,13 +561,16 @@ const App: React.FC = () => {
                                     <td className="p-4"><button onClick={() => handleSaveContact({...c, autoPilotEnabled: !c.autoPilotEnabled})} title={c.autoPilotEnabled!==false?"Pausar Automação para este contato":"Ativar Automação"} className={`w-8 h-8 rounded-full flex items-center justify-center ${c.autoPilotEnabled!==false?'bg-green-100 text-green-600':'bg-gray-100 text-gray-400'}`}>{c.autoPilotEnabled!==false?<Icons.Pause/>:<Icons.Play/>}</button></td>
                                     <td className="p-4 font-bold">{c.name}<div className="text-xs font-normal text-gray-500">{c.type}</div>{c.hasUnreadReply && <div className="text-xs text-yellow-600 font-bold animate-pulse">🔔 Nova Mensagem</div>}</td>
                                     <td className="p-4">
-                                        {c.automationStage === AutomationStage.IDLE 
-                                            ? <span className="text-gray-500" title="Aguardando data do próximo ciclo">Pendente ({daysWait}d)</span> 
-                                            : <span className="text-blue-600 font-bold" title="Mensagem enviada, aguardando resposta">Aguardando ({daysWait}d)</span>
+                                        <div className="text-xs text-gray-500">
+                                            <div>Último: {daysWait} dias atrás</div>
+                                            <div className={isLate ? "text-red-500 font-bold" : "text-gray-400"}>Próximo: {nextDate.toLocaleDateString()}</div>
+                                        </div>
+                                        {c.automationStage !== AutomationStage.IDLE && 
+                                            <span className="text-blue-600 font-bold text-xs" title="Mensagem enviada, aguardando resposta">● Aguardando Resposta</span>
                                         }
                                     </td>
                                     <td className="p-4 text-right flex justify-end gap-2">
-                                        <button onClick={() => handleForceTest(c)} className="p-2 bg-yellow-50 text-yellow-600 rounded" title="⚡ TESTE: Forçar Vencimento Agora"><Icons.Flash /></button>
+                                        <button onClick={() => handleForceTest(c)} className="p-2 bg-yellow-50 text-yellow-600 rounded" title="Envio de mensagem agora"><Icons.Flash /></button>
                                         <button onClick={() => handleOpenChat(c)} className="p-2 bg-green-50 text-green-600 rounded" title="Abrir Chat Ao Vivo (Marca como lida)"><Icons.WhatsApp /></button>
                                         <button onClick={() => { setSelectedId(c.id); generateFollowUpMessage(c, settings!, false).then(setGenMsg); }} className="p-2 bg-blue-50 text-blue-600 rounded" title="Gerar Mensagem de Follow-up"><Icons.Message /></button>
                                         <button onClick={() => { setEditingContact(c); setIsModalOpen(true); }} className="p-2 bg-gray-50 text-gray-600 rounded" title="Editar Contato"><Icons.Users /></button>

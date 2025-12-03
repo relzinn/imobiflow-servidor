@@ -240,6 +240,13 @@ app.get('/status', (req, res) => {
 
 app.get('/qr', (req, res) => res.json({ qrCode: qrCodeData, ts: Date.now() }));
 
+// Rota para disparar automação manualmente (ex: após importação)
+app.get('/trigger-automation', (req, res) => {
+    console.log("⚡ Trigger manual de automação solicitado.");
+    runAutomationCycle(); 
+    res.json({ success: true });
+});
+
 // CHAT AO VIVO
 app.get('/chat/:phone', async (req, res) => {
     if (!isReady) return res.status(503).json({ error: 'Offline' });
