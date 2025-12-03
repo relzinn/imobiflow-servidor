@@ -18,22 +18,18 @@ app.use(express.json());
 
 // --- FUNÇÕES AUXILIARES ---
 
-// Formata telefone para padrão WhatsApp (55 + DDD + Num)
 function formatPhone(phone) {
     let p = phone.replace(/\D/g, '');
-    // Se tiver 10 ou 11 dígitos, assume BR e poe 55
     if ((p.length === 10 || p.length === 11) && !p.startsWith('55')) {
         p = '55' + p;
     }
     return p;
 }
 
-// Gera mensagem baseada em templates (Lógica portada do Frontend para Backend)
 function generateTemplateMessage(contact, settings) {
     const agent = settings.agentName || "Seu Corretor";
     const agency = settings.agencyName || "nossa imobiliária";
     
-    // Simples motor de templates para rodar 24/7 sem API Key
     switch (contact.type) {
         case 'Proprietário':
             return `Olá ${contact.name}, aqui é ${agent} da ${agency}. Como estão as coisas? Gostaria de saber se o imóvel ainda está disponível para venda ou se houve alguma mudança. Abraço!`;
@@ -127,10 +123,16 @@ client.on('message', async msg => {
 // --- MOTOR DE AUTOMAÇÃO (BACKGROUND) ---
 
 async function runAutomationCycle() {
-    if (!isReady) return;
+    if (!isReady) {
+        console.log("⏳ Automação aguardando conexão do WhatsApp...");
+        return;
+    }
     
     const settings = getSettings();
-    if (!settings.automationActive) return;
+    if (!settings.automationActive) {
+        console.log("zzz Automação pausada nas configurações.");
+        return;
+    }
 
     console.log("🔄 Rodando ciclo de automação...");
     const contacts = getContacts();
@@ -138,36 +140,47 @@ async function runAutomationCycle() {
     const now = Date.now();
 
     for (let c of contacts) {
-        // Regras de Automação
-        if (c.autoPilotEnabled === false || c.hasUnreadReply) continue;
+        // Pula se automação desligada para o contato ou se tem resposta não lida
+        if (c.autoPilotEnabled === false) continue;
+        if (c.hasUnreadReply) {
+            console.log(`✋ ${c.name}: Tem resposta não lida. Pulando.`);
+            continue;
+        }
         
         // Apenas estágio IDLE (Pendente) é processado automaticamente pelo tempo
         if (c.automationStage === 0) { // IDLE
-            const lastDate = new Date(c.lastContactDate).getTime();
-            const daysPassed = (now - lastDate) / (1000 * 60 * 60 * 24);
+            const lastDateStr = c.lastContactDate || new Date().toISOString();
+            const lastDate = new Date(lastDateStr).getTime();
+            const frequency = c.followUpFrequencyDays || 30; // Default 30 dias
             
-            if (daysPassed >= c.followUpFrequencyDays) {
-                console.log(`⚡ Disparando automação para ${c.name}`);
+            const diffTime = Math.abs(now - lastDate);
+            const daysPassed = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+            
+            // Log detalhado para debug
+            console.log(`🔎 ${c.name}: Passaram ${daysPassed} dias (Meta: ${frequency}). Status: ${daysPassed >= frequency ? 'VENCIDO (Enviar)' : 'NO PRAZO (Aguardar)'}`);
+
+            if (daysPassed >= frequency) {
+                console.log(`⚡ Disparando mensagem para ${c.name}...`);
                 
                 const msg = generateTemplateMessage(c, settings);
                 const chatId = `${formatPhone(c.phone)}@c.us`;
                 
                 try {
-                    // Envio Seguro
                     const numberId = await client.getNumberId(chatId);
                     const target = numberId ? numberId._serialized : chatId;
                     await client.sendMessage(target, msg);
+                    console.log(`✅ Mensagem enviada para ${c.name}`);
                     
                     // Atualiza Estado
                     c.lastAutomatedMsgDate = new Date().toISOString();
-                    c.lastContactDate = new Date().toISOString();
+                    c.lastContactDate = new Date().toISOString(); // Atualiza data para evitar loop
                     c.automationStage = 1; // WAITING_REPLY_1
                     changed = true;
                 } catch (e) {
-                    console.error(`Erro ao enviar para ${c.name}:`, e.message);
+                    console.error(`❌ Erro ao enviar para ${c.name}:`, e.message);
                 }
                 
-                // Pequena pausa para evitar bloqueio
+                // Pequena pausa para evitar bloqueio (rate limit)
                 await new Promise(r => setTimeout(r, 5000));
             }
         }
@@ -176,8 +189,8 @@ async function runAutomationCycle() {
     if (changed) saveContacts(contacts);
 }
 
-// Roda o ciclo a cada 60 minutos (ajustável)
-setInterval(runAutomationCycle, 60 * 60 * 1000);
+// Roda o ciclo a cada 10 minutos
+setInterval(runAutomationCycle, 10 * 60 * 1000);
 // Roda uma verificação rápida 10s após ligar
 setTimeout(runAutomationCycle, 10000);
 
@@ -207,7 +220,6 @@ app.get('/chat/:phone', async (req, res) => {
         
         res.json(history);
     } catch (e) {
-        // Se chat não existe, retorna vazio sem erro
         res.json([]);
     }
 });
@@ -216,11 +228,10 @@ app.post('/toggle-automation', (req, res) => {
     const s = getSettings();
     s.automationActive = req.body.active;
     saveSettings(s);
-    if (s.automationActive) runAutomationCycle(); // Força ciclo imediato
+    if (s.automationActive) setTimeout(runAutomationCycle, 1000); // Força ciclo imediato
     res.json({ success: true, active: s.automationActive });
 });
 
-// Outros Endpoints mantidos...
 app.get('/activity', (req, res) => res.json(incomingActivity));
 app.get('/clear', (req, res) => { for (let k in incomingActivity) delete incomingActivity[k]; res.json({success:true}); });
 app.get('/contacts', (req, res) => res.json(getContacts()));
@@ -243,5 +254,5 @@ client.initialize().catch(console.error);
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Servidor ImobiFlow rodando em porta ${PORT}`);
-    console.log('🤖 Automação de Background: ATIVA');
+    console.log('🤖 Automação de Background: ATIVA (Verificando a cada 10min)');
 });

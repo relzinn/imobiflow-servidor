@@ -151,7 +151,7 @@ const App: React.FC = () => {
   const [editingContact, setEditingContact] = useState<Contact | null>(null);
   const [isQRCodeOpen, setIsQRCodeOpen] = useState(false);
   const [isInboxOpen, setIsInboxOpen] = useState(false);
-  const [chatContact, setChatContact] = useState<Contact | null>(null); // Novo: Estado do Chat
+  const [chatContact, setChatContact] = useState<Contact | null>(null);
 
   // Estados UI
   const [filterType, setFilterType] = useState<string>('ALL');
@@ -243,7 +243,6 @@ const App: React.FC = () => {
             }
         }
         
-        // Sync de contatos/atividades... (Mantido lógica anterior simplificada)
         if (stData.isReady) {
             fetchContacts(url); // Recarrega DB completo pois servidor pode ter alterado dados
         }
@@ -259,7 +258,6 @@ const App: React.FC = () => {
 
   // Ações
   const handleSaveContact = async (data: Contact) => {
-    // Mesma logica de antes
     const newList = contacts.some(c => c.id === data.id) ? contacts.map(c => c.id === data.id ? data : c) : [...contacts, data];
     await persistContacts(newList);
     setEditingContact(null);
@@ -270,6 +268,23 @@ const App: React.FC = () => {
         persistContacts(contacts.filter(c => c.id !== id));
         setConfirmData({show:false, msg:'', action:()=>{}});
     }});
+  };
+  
+  const handleForceTest = async (c: Contact) => {
+      // Retroage a data do contato para garantir disparo
+      const pastDate = new Date();
+      pastDate.setDate(pastDate.getDate() - (c.followUpFrequencyDays + 2)); // Volta dias suficientes
+      const updated = {...c, lastContactDate: pastDate.toISOString().split('T')[0]};
+      
+      const newList = contacts.map(x => x.id === c.id ? updated : x);
+      await persistContacts(newList);
+      
+      // Força trigger no server
+      await fetch(`${settings!.serverUrl}/toggle-automation`, { 
+              method: 'POST', headers: getHeaders(), 
+              body: JSON.stringify({ active: true }) 
+      });
+      setToast({msg: 'Teste Disparado! Verifique logs do servidor.', type: 'success'});
   };
 
   const handleKeepContact = (c: Contact) => { setProcessingReplyId(c.id); setEditingContact(c); setIsModalOpen(true); };
@@ -352,6 +367,7 @@ const App: React.FC = () => {
                                     <td className="p-4 font-bold">{c.name}<div className="text-xs font-normal text-gray-500">{c.type}</div>{c.hasUnreadReply && <div className="text-xs text-yellow-600">🔔 Nova Msg</div>}</td>
                                     <td className="p-4">{c.automationStage === AutomationStage.IDLE ? 'Pendente' : 'Aguardando'}</td>
                                     <td className="p-4 text-right flex justify-end gap-2">
+                                        <button onClick={() => handleForceTest(c)} className="p-2 bg-yellow-50 text-yellow-600 rounded" title="⚡ TESTE: Forçar Vencimento Agora"><Icons.Flash /></button>
                                         <button onClick={() => setChatContact(c)} className="p-2 bg-green-50 text-green-600 rounded" title="Abrir Chat Ao Vivo"><Icons.WhatsApp /></button>
                                         <button onClick={() => { setSelectedId(c.id); generateFollowUpMessage(c, settings!, false).then(setGenMsg); }} className="p-2 bg-blue-50 text-blue-600 rounded" title="Gerar Msg"><Icons.Message /></button>
                                         <button onClick={() => { setEditingContact(c); setIsModalOpen(true); }} className="p-2 bg-gray-50 text-gray-600 rounded" title="Editar"><Icons.Users /></button>
@@ -384,8 +400,8 @@ const App: React.FC = () => {
                                     <div className="font-bold">{c.name}</div>
                                     <div className="text-sm my-2 italic text-gray-700">"Nova mensagem."</div>
                                     <div className="flex gap-2">
-                                        <button onClick={() => setChatContact(c)} className="flex-1 bg-green-600 text-white py-1 rounded text-xs font-bold">Chat</button>
-                                        <button onClick={() => { setIsInboxOpen(false); handleKeepContact(c); }} className="flex-1 bg-blue-600 text-white py-1 rounded text-xs font-bold">Atualizar</button>
+                                        <button onClick={() => setChatContact(c)} className="flex-1 bg-green-600 text-white py-1 rounded text-xs font-bold" title="Abrir conversa">Chat</button>
+                                        <button onClick={() => { setIsInboxOpen(false); handleKeepContact(c); }} className="flex-1 bg-blue-600 text-white py-1 rounded text-xs font-bold" title="Processar atualização">Atualizar</button>
                                     </div>
                                 </div>
                             ))}
