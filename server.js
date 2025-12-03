@@ -12,7 +12,7 @@ const PORT = process.env.PORT || 3001;
 const DB_FILE = path.join(__dirname, 'database.json');
 const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 
-// CORS Total
+// CORS Total e aceitar JSON
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
@@ -28,6 +28,7 @@ function formatPhone(phone) {
 
 // Comparação flexível de telefones (com/sem 55, com/sem 9)
 function isSamePhone(p1, p2) {
+    if (!p1 || !p2) return false;
     const n1 = p1.replace(/\D/g, '');
     const n2 = p2.replace(/\D/g, '');
     // Pega os últimos 8 dígitos (garante unicidade sem depender de DDD/DDI)
@@ -84,13 +85,20 @@ let qrCodeData = null;
 let clientStatus = 'initializing';
 let isReady = false;
 
+// Configuração para rodar no Render (Linux) e Local
 const client = new Client({
     authStrategy: new LocalAuth({ clientId: "imobiflow-crm-v2" }),
     puppeteer: {
         headless: true,
         args: [
-            '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--single-process', '--disable-gpu'
+            '--no-sandbox', 
+            '--disable-setuid-sandbox', 
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas', 
+            '--no-first-run', 
+            '--no-zygote', 
+            '--single-process', 
+            '--disable-gpu'
         ]
     }
 });
@@ -110,25 +118,28 @@ client.on('ready', () => {
     qrCodeData = null;
 });
 
-client.on('authenticated', () => { clientStatus = 'authenticated'; });
+client.on('authenticated', () => { 
+    console.log('🔑 Autenticado com sucesso!');
+    clientStatus = 'authenticated'; 
+});
 
 client.on('disconnected', async (reason) => {
     console.log('⚠️ Desconectado:', reason);
     isReady = false;
     clientStatus = 'disconnected';
+    // Reconexão graciosa
     try { await client.destroy(); } catch(e) {}
     setTimeout(() => { client.initialize().catch(console.error); }, 5000);
 });
 
 client.on('message', async msg => {
-    // Ignora mensagens de status, grupos ou enviadas por mim mesmo
+    // Ignora mensagens de status, grupos ou enviadas por mim mesmo (via celular/web)
     if(msg.isStatus || msg.from.includes('@g.us') || msg.fromMe) return;
 
     const fromNumber = msg.from.replace('@c.us', '');
     console.log(`📩 Nova mensagem de: ${fromNumber}`);
     
     // --- LÓGICA DE NOTIFICAÇÃO NO SERVIDOR ---
-    // Atualiza o banco de dados DIRETAMENTE para garantir que o frontend pegue a notificação
     const contacts = getContacts();
     let updated = false;
 
@@ -185,7 +196,6 @@ async function runAutomationCycle() {
             const diffTime = Math.abs(now - lastDate);
             const daysPassed = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
             
-            // Log detalhado para debug
             console.log(`🔎 ${c.name}: Passaram ${daysPassed} dias (Meta: ${frequency}). Status: ${daysPassed >= frequency ? 'VENCIDO (Enviar)' : 'NO PRAZO (Aguardar)'}`);
 
             if (daysPassed >= frequency) {
@@ -209,8 +219,7 @@ async function runAutomationCycle() {
                     console.error(`❌ Erro ao enviar para ${c.name}:`, e.message);
                 }
                 
-                // Pequena pausa para evitar bloqueio (rate limit)
-                await new Promise(r => setTimeout(r, 5000));
+                await new Promise(r => setTimeout(r, 5000)); // Pausa entre envios
             }
         }
     }
@@ -257,7 +266,7 @@ app.post('/toggle-automation', (req, res) => {
     const s = getSettings();
     s.automationActive = req.body.active;
     saveSettings(s);
-    if (s.automationActive) setTimeout(runAutomationCycle, 1000); // Força ciclo imediato
+    if (s.automationActive) setTimeout(runAutomationCycle, 1000);
     res.json({ success: true, active: s.automationActive });
 });
 
@@ -282,15 +291,22 @@ app.get('/whatsapp-contacts', async (req, res) => {
     if (!isReady) return res.status(503).json({ error: 'Offline' });
     try {
         const contacts = await client.getContacts();
-        // Filtra apenas contatos pessoais (sem grupos) e que tenham nome
+        console.log(`🔎 Importação: Encontrados ${contacts.length} contatos brutos.`);
+        
+        // Filtra contatos pessoais. 
+        // Importante: Removemos a exigência de nome para não vir vazio. 
+        // Se não tiver nome, usa o número ou pushname.
         const filtered = contacts
-            .filter(c => c.id.server === 'c.us' && !c.isMe && (c.name || c.pushname))
+            .filter(c => c.id.server === 'c.us' && !c.isMe && !c.isGroup)
             .map(c => ({
-                name: c.name || c.pushname || c.number,
-                phone: c.number
+                name: c.name || c.pushname || c.number || c.id.user,
+                phone: c.number || c.id.user
             }));
+            
+        console.log(`✅ Importação: ${filtered.length} contatos válidos processados.`);
         res.json(filtered);
     } catch (e) {
+        console.error("Erro importação:", e);
         res.status(500).json({ error: e.message });
     }
 });
