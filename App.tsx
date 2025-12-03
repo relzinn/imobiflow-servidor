@@ -18,12 +18,27 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
     const [searchTerm, setSearchTerm] = useState('');
     const [targetType, setTargetType] = useState<ContactType>(ContactType.CLIENT);
 
+    // Estados para Revisão de Contatos
+    const [reviewQueue, setReviewQueue] = useState<{name: string, phone: string, timestamp?: number}[]>([]);
+    const [reviewedContacts, setReviewedContacts] = useState<any[]>([]); // Contatos já prontos
+    const [isReviewing, setIsReviewing] = useState(false);
+    const [currentReviewIndex, setCurrentReviewIndex] = useState(0);
+    
+    // Form do Review
+    const [reviewName, setReviewName] = useState('');
+    const [reviewNotes, setReviewNotes] = useState('');
+
     useEffect(() => {
         if (isOpen) {
-            // Limpa a seleção anterior ao abrir
+            // Reset Total
             setSelected(new Set());
             setLoading(true);
-            setSearchTerm(''); // Limpa busca
+            setSearchTerm('');
+            setIsReviewing(false);
+            setReviewQueue([]);
+            setReviewedContacts([]);
+            setCurrentReviewIndex(0);
+
             fetch(`${serverUrl}/whatsapp-contacts`, { headers: {'ngrok-skip-browser-warning': 'true'} })
                 .then(res => res.json())
                 .then(data => {
@@ -43,21 +58,70 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
         setSelected(next);
     };
 
-    const handleExecuteImport = () => {
-        const toImport = waContacts.filter(c => selected.has(c.phone));
+    // 1. Inicia o Processo
+    const handleStartImport = () => {
+        const selectedList = waContacts.filter(c => selected.has(c.phone));
         
+        if (selectedList.length === 0) return;
+
+        // MUDANÇA: Todos os contatos selecionados vão para a fila de revisão, obrigando a qualificação.
+        setReviewedContacts([]); 
+        setReviewQueue(selectedList);
+        setIsReviewing(true);
+        setCurrentReviewIndex(0);
+        
+        // Prepara form para o primeiro (já preenche o nome se tiver)
+        setReviewName(selectedList[0].name || '');
+        setReviewNotes('');
+    };
+
+    // 2. Salva o contato revisado e vai pro próximo
+    const handleNextReview = () => {
+        if (!reviewName.trim()) {
+            alert("Por favor, dê um nome para o contato.");
+            return;
+        }
+
+        if (!reviewNotes.trim()) {
+            if(!confirm("Tem certeza que deseja salvar sem observação? A observação ajuda a IA.")) return;
+        }
+
+        const current = reviewQueue[currentReviewIndex];
+        const updatedContact = {
+            ...current,
+            name: reviewName,
+            customNotes: reviewNotes // Guarda nota customizada
+        };
+
+        const newReviewedList = [...reviewedContacts, updatedContact];
+        setReviewedContacts(newReviewedList);
+
+        // Verifica se tem mais
+        if (currentReviewIndex < reviewQueue.length - 1) {
+            const nextIndex = currentReviewIndex + 1;
+            setCurrentReviewIndex(nextIndex);
+            // Prepara o próximo: Preenche o nome automaticamente para facilitar
+            setReviewName(reviewQueue[nextIndex].name || '');
+            setReviewNotes('');
+        } else {
+            // Acabou a fila
+            finalizeImport(newReviewedList);
+        }
+    };
+
+    // 3. Finaliza tudo
+    const finalizeImport = (finalList: any[]) => {
         let freq = 30;
         if (targetType === ContactType.OWNER) freq = settings.defaultFrequencyOwner;
         else if (targetType === ContactType.BUILDER) freq = settings.defaultFrequencyBuilder;
         else freq = settings.defaultFrequencyClient;
 
-        const newContacts: Contact[] = toImport.map(c => ({
+        const newContacts: Contact[] = finalList.map(c => ({
             id: generateId(),
             name: c.name,
             phone: c.phone.startsWith('55') ? c.phone : '55' + c.phone,
             type: targetType,
-            notes: 'Importado do WhatsApp',
-            // Se tiver timestamp do WhatsApp, usa. Se não, usa hoje.
+            notes: c.customNotes || 'Importado do WhatsApp', 
             lastContactDate: c.timestamp 
                 ? new Date(c.timestamp * 1000).toISOString().split('T')[0] 
                 : new Date().toISOString().split('T')[0],
@@ -70,12 +134,66 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
         onImport(newContacts);
         onClose();
         
-        // GATILHO: Dispara automação no servidor imediatamente para pegar contatos vencidos
+        // GATILHO: Dispara automação no servidor imediatamente
         fetch(`${serverUrl}/trigger-automation`, { headers: {'ngrok-skip-browser-warning': 'true'} }).catch(console.error);
     };
 
     if (!isOpen) return null;
 
+    // --- MODO DE REVISÃO (UI) ---
+    if (isReviewing) {
+        const currentItem = reviewQueue[currentReviewIndex];
+        return (
+            <div className="fixed inset-0 bg-black/60 z-[95] flex items-center justify-center p-4">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
+                    <h3 className="font-bold text-lg mb-2 text-blue-600">Qualificar Contato</h3>
+                    <p className="text-sm text-gray-500 mb-4">
+                        Revise os dados e adicione uma observação ({currentReviewIndex + 1} de {reviewQueue.length}).
+                    </p>
+                    
+                    <div className="bg-gray-100 p-3 rounded mb-4 text-center">
+                        <div className="font-mono font-bold text-lg">{currentItem.phone}</div>
+                        {currentItem.timestamp && <div className="text-xs text-gray-500">Última msg: {new Date(currentItem.timestamp * 1000).toLocaleDateString()}</div>}
+                    </div>
+
+                    <div className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Nome do Cliente</label>
+                            <input 
+                                autoFocus
+                                className="w-full border p-2 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                placeholder="Ex: João da Silva"
+                                value={reviewName}
+                                onChange={e => setReviewName(e.target.value)}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Observação (Para a IA)</label>
+                            <textarea 
+                                className="w-full border p-2 rounded focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                                placeholder="Ex: Interessado em apto na praia, reclamou do preço..."
+                                rows={3}
+                                value={reviewNotes}
+                                onChange={e => setReviewNotes(e.target.value)}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="flex justify-between items-center mt-6 pt-4 border-t">
+                        <div className="text-xs text-gray-400">Passo {currentReviewIndex + 1} / {reviewQueue.length}</div>
+                        <button 
+                            onClick={handleNextReview}
+                            className="bg-blue-600 text-white px-6 py-2 rounded font-bold hover:bg-blue-700 transition-colors"
+                        >
+                            {currentReviewIndex < reviewQueue.length - 1 ? 'Salvar e Próximo' : 'Salvar e Finalizar'}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // --- MODO DE SELEÇÃO (UI PADRÃO) ---
     const filtered = waContacts.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
     return (
@@ -134,7 +252,10 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
 
                 <div className="p-4 border-t flex justify-between items-center bg-gray-50">
                     <div className="text-sm text-gray-600">{selected.size} selecionados</div>
-                    <button onClick={handleExecuteImport} disabled={selected.size === 0} className="bg-blue-600 text-white px-6 py-2 rounded font-bold disabled:opacity-50">Confirmar Importação</button>
+                    <div className="flex gap-2">
+                        <button onClick={() => setSelected(new Set())} className="text-red-500 text-xs hover:underline self-center mr-2">Limpar seleção</button>
+                        <button onClick={handleStartImport} disabled={selected.size === 0} className="bg-blue-600 text-white px-6 py-2 rounded font-bold disabled:opacity-50">Qualificar e Importar</button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -440,9 +561,9 @@ const App: React.FC = () => {
       const newList = contacts.map(x => x.id === c.id ? updated : x);
       await persistContacts(newList);
       
-      await fetch(`${settings!.serverUrl}/toggle-automation`, { 
-              method: 'POST', headers: getHeaders(), 
-              body: JSON.stringify({ active: true }) 
+      // Chama a trigger manual
+      await fetch(`${settings!.serverUrl}/trigger-automation`, { 
+              method: 'GET', headers: getHeaders()
       });
       setToast({msg: 'Teste Disparado! Verifique logs do servidor.', type: 'success'});
   };
@@ -460,6 +581,13 @@ const App: React.FC = () => {
       const merged = [...contacts, ...newContacts];
       await persistContacts(merged);
       setToast({msg: `${newContacts.length} contatos importados!`, type: 'success'});
+      
+      // Gatilho imediato após importar
+      try {
+          await fetch(`${settings!.serverUrl}/trigger-automation`, { 
+              method: 'GET', headers: getHeaders()
+          });
+      } catch (e) {}
   };
 
   const sendManual = async (c: Contact) => {
