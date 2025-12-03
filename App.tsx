@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { StrategyWizard } from './components/StrategyWizard';
 import { ContactModal } from './components/ContactModal';
@@ -8,6 +9,115 @@ import { generateFollowUpMessage } from './services/geminiService';
 
 // --- HELPERS ---
 const generateId = () => typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random()}`;
+
+// --- COMPONENTE INTERNO: MODAL IMPORTAÇÃO ---
+const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: string, existingContacts: Contact[], onImport: (newContacts: Contact[]) => void, settings: AppSettings }> = ({ isOpen, onClose, serverUrl, existingContacts, onImport, settings }) => {
+    const [waContacts, setWaContacts] = useState<{name: string, phone: string}[]>([]);
+    const [selected, setSelected] = useState<Set<string>>(new Set());
+    const [loading, setLoading] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const [targetType, setTargetType] = useState<ContactType>(ContactType.CLIENT);
+
+    useEffect(() => {
+        if (isOpen) {
+            setLoading(true);
+            fetch(`${serverUrl}/whatsapp-contacts`, { headers: {'ngrok-skip-browser-warning': 'true'} })
+                .then(res => res.json())
+                .then(data => {
+                    // Filtra contatos que JÁ estão no sistema
+                    const existingPhones = new Set(existingContacts.map(c => c.phone.replace(/\D/g, '').slice(-8)));
+                    const available = data.filter((c: any) => !existingPhones.has(c.phone.replace(/\D/g, '').slice(-8)));
+                    setWaContacts(available);
+                })
+                .catch(() => alert('Erro ao buscar contatos. WhatsApp conectado?'))
+                .finally(() => setLoading(false));
+        }
+    }, [isOpen]);
+
+    const handleToggle = (phone: string) => {
+        const next = new Set(selected);
+        if (next.has(phone)) next.delete(phone);
+        else next.add(phone);
+        setSelected(next);
+    };
+
+    const handleExecuteImport = () => {
+        const toImport = waContacts.filter(c => selected.has(c.phone));
+        
+        let freq = 30;
+        if (targetType === ContactType.OWNER) freq = settings.defaultFrequencyOwner;
+        else if (targetType === ContactType.BUILDER) freq = settings.defaultFrequencyBuilder;
+        else freq = settings.defaultFrequencyClient;
+
+        const newContacts: Contact[] = toImport.map(c => ({
+            id: generateId(),
+            name: c.name,
+            phone: c.phone.startsWith('55') ? c.phone : '55' + c.phone,
+            type: targetType,
+            notes: 'Importado do WhatsApp',
+            lastContactDate: new Date().toISOString().split('T')[0],
+            followUpFrequencyDays: freq,
+            automationStage: AutomationStage.IDLE,
+            autoPilotEnabled: true,
+            hasUnreadReply: false
+        }));
+
+        onImport(newContacts);
+        onClose();
+    };
+
+    if (!isOpen) return null;
+
+    const filtered = waContacts.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    return (
+        <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center p-4">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg h-[600px] flex flex-col animate-in zoom-in-95">
+                <div className="p-4 border-b flex justify-between items-center">
+                    <h3 className="font-bold">Importar do WhatsApp</h3>
+                    <button onClick={onClose}>✕</button>
+                </div>
+                
+                <div className="p-4 border-b bg-gray-50 space-y-3">
+                    <input 
+                        className="w-full border rounded p-2" 
+                        placeholder="Buscar por nome..." 
+                        value={searchTerm} 
+                        onChange={e => setSearchTerm(e.target.value)} 
+                    />
+                    <div className="flex items-center gap-2">
+                         <span className="text-sm font-bold text-gray-500">Importar como:</span>
+                         <select className="border rounded p-1 text-sm flex-1" value={targetType} onChange={e => setTargetType(e.target.value as ContactType)}>
+                            {Object.values(ContactType).map(t => <option key={t} value={t}>{t}</option>)}
+                         </select>
+                    </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-2">
+                    {loading ? <div className="text-center p-10">Carregando contatos do celular...</div> : (
+                        <div className="space-y-1">
+                            {filtered.map(c => (
+                                <div key={c.phone} className={`flex items-center p-2 rounded cursor-pointer hover:bg-gray-100 ${selected.has(c.phone) ? 'bg-blue-50 border-blue-200 border' : ''}`} onClick={() => handleToggle(c.phone)}>
+                                    <input type="checkbox" checked={selected.has(c.phone)} readOnly className="mr-3 h-4 w-4" />
+                                    <div>
+                                        <div className="font-bold text-sm">{c.name}</div>
+                                        <div className="text-xs text-gray-500">{c.phone}</div>
+                                    </div>
+                                </div>
+                            ))}
+                            {filtered.length === 0 && <div className="text-center p-4 text-gray-500">Nenhum contato novo encontrado.</div>}
+                        </div>
+                    )}
+                </div>
+
+                <div className="p-4 border-t flex justify-between items-center bg-gray-50">
+                    <div className="text-sm text-gray-600">{selected.size} selecionados</div>
+                    <button onClick={handleExecuteImport} disabled={selected.size === 0} className="bg-blue-600 text-white px-6 py-2 rounded font-bold disabled:opacity-50">Confirmar Importação</button>
+                </div>
+            </div>
+        </div>
+    );
+};
 
 // --- COMPONENTE INTERNO: MODAL DE CHAT ---
 const ChatModal: React.FC<{ contact: Contact | null, onClose: () => void, serverUrl: string }> = ({ contact, onClose, serverUrl }) => {
@@ -151,6 +261,7 @@ const App: React.FC = () => {
   const [isQRCodeOpen, setIsQRCodeOpen] = useState(false);
   const [isInboxOpen, setIsInboxOpen] = useState(false);
   const [chatContact, setChatContact] = useState<Contact | null>(null);
+  const [isImportOpen, setIsImportOpen] = useState(false);
 
   // Estados UI
   const [filterType, setFilterType] = useState<string>('ALL');
@@ -302,6 +413,12 @@ const App: React.FC = () => {
   const handleKeepContact = (c: Contact) => { setProcessingReplyId(c.id); setEditingContact(c); setIsModalOpen(true); };
   const handleFinalizeContact = (c: Contact) => handleDelete(c.id);
 
+  const handleImportContacts = async (newContacts: Contact[]) => {
+      const merged = [...contacts, ...newContacts];
+      await persistContacts(merged);
+      setToast({msg: `${newContacts.length} contatos importados!`, type: 'success'});
+  };
+
   const sendManual = async (c: Contact) => {
       setSending(true);
       try {
@@ -359,14 +476,24 @@ const App: React.FC = () => {
         <main className="flex-1 p-8 overflow-y-auto">
             <header className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Contatos</h2>
-                <button 
-                    onClick={() => { setEditingContact(null); setIsModalOpen(true); }} 
-                    className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 py-2.5 rounded-full font-bold shadow-lg shadow-blue-500/30 flex items-center gap-2 transition-all hover:scale-105 active:scale-95" 
-                    title="Adicionar novo contato para follow-up"
-                >
-                    <Icons.Plus /> 
-                    <span>Novo Contato</span>
-                </button>
+                <div className="flex gap-2">
+                    <button 
+                        onClick={() => setIsImportOpen(true)}
+                        className="bg-white text-gray-700 border hover:bg-gray-50 px-4 py-2.5 rounded-full font-bold shadow-sm flex items-center gap-2 transition-all" 
+                        title="Importar contatos salvos no WhatsApp"
+                    >
+                        <Icons.CloudDownload />
+                        <span>Importar</span>
+                    </button>
+                    <button 
+                        onClick={() => { setEditingContact(null); setIsModalOpen(true); }} 
+                        className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white px-6 py-2.5 rounded-full font-bold shadow-lg shadow-blue-500/30 flex items-center gap-2 transition-all hover:scale-105 active:scale-95" 
+                        title="Adicionar novo contato para follow-up"
+                    >
+                        <Icons.Plus /> 
+                        <span>Novo Contato</span>
+                    </button>
+                </div>
             </header>
 
             <div className="flex gap-2 mb-4">
@@ -421,6 +548,14 @@ const App: React.FC = () => {
                 initialContact={editingContact} 
                 settings={settings} 
                 defaultType={filterType !== 'ALL' ? (filterType as ContactType) : ContactType.CLIENT}
+            />
+            <ImportModal
+                isOpen={isImportOpen}
+                onClose={() => setIsImportOpen(false)}
+                serverUrl={settings?.serverUrl || ''}
+                existingContacts={contacts}
+                onImport={handleImportContacts}
+                settings={settings!}
             />
             <QRCodeModal isOpen={isQRCodeOpen} onClose={() => setIsQRCodeOpen(false)} onConnected={() => { setServerStatus(true); setIsQRCodeOpen(false); }} serverUrl={settings?.serverUrl} onUrlChange={(u) => persistSettings({...settings!, serverUrl: u})} />
             <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} settings={settings!} onSave={persistSettings} />

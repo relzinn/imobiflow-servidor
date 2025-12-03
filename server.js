@@ -138,8 +138,6 @@ client.on('message', async msg => {
             c.hasUnreadReply = true;
             c.lastReplyContent = msg.body;
             c.lastReplyTimestamp = Date.now();
-            // Se respondeu, podemos resetar estágio de automação se desejar, 
-            // mas geralmente esperamos o usuário processar no inbox.
             updated = true;
         }
     }
@@ -277,6 +275,24 @@ app.post('/send', async (req, res) => {
         await client.sendMessage(numberId ? numberId._serialized : chatId, message);
         res.json({ success: true });
     } catch (e) { res.status(500).json({ success: false, error: e.message }); }
+});
+
+// Endpoint para Importar Contatos do WhatsApp
+app.get('/whatsapp-contacts', async (req, res) => {
+    if (!isReady) return res.status(503).json({ error: 'Offline' });
+    try {
+        const contacts = await client.getContacts();
+        // Filtra apenas contatos pessoais (sem grupos) e que tenham nome
+        const filtered = contacts
+            .filter(c => c.id.server === 'c.us' && !c.isMe && (c.name || c.pushname))
+            .map(c => ({
+                name: c.name || c.pushname || c.number,
+                phone: c.number
+            }));
+        res.json(filtered);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
 });
 
 client.initialize().catch(console.error);
