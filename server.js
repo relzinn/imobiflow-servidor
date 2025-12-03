@@ -1,4 +1,3 @@
-
 const express = require('express');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
@@ -6,6 +5,11 @@ const qrcodeTerminal = require('qrcode-terminal');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const { GoogleGenAI } = require("@google/genai");
+
+// --- CONFIGURAÇÃO DA EQUIPE (TRANSPARENTE PARA O USUÁRIO) ---
+// INSIRA SUA CHAVE API AQUI. O USUÁRIO FINAL NÃO TERÁ ACESSO A ELA.
+const TEAM_GEMINI_API_KEY = "AIzaSy..."; // <--- COLE SUA CHAVE AQUI
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -15,6 +19,86 @@ const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 // CORS Total e aceitar JSON
 app.use(cors({ origin: '*' }));
 app.use(express.json());
+
+// --- IA CENTRALIZADA ---
+
+async function generateAIMessage(contact, settings) {
+    const agent = settings.agentName || "Seu Corretor";
+    const agency = settings.agencyName || "nossa imobiliária";
+    const tone = settings.messageTone || "Casual";
+
+    // Se não tiver chave configurada pela equipe, usa template de fallback
+    if (!TEAM_GEMINI_API_KEY || TEAM_GEMINI_API_KEY === "AIzaSy..." || TEAM_GEMINI_API_KEY.length < 10) {
+        console.log("⚠️ IA não configurada no servidor. Usando template.");
+        return generateTemplateFallback(contact, settings);
+    }
+
+    try {
+        const ai = new GoogleGenAI({ apiKey: TEAM_GEMINI_API_KEY });
+        const modelId = "gemini-2.5-flash";
+
+        const internalNotes = contact.notes ? `OBSERVAÇÃO INTERNA DO SISTEMA: "${contact.notes}"` : "Sem observações.";
+
+        // Estratégia por tipo de contato baseada nas observações
+        let specificStrategy = "";
+        
+        if (contact.type === 'Proprietário') {
+            specificStrategy = "O contato é proprietário de um imóvel. Use a 'OBSERVAÇÃO INTERNA' para identificar qual é o imóvel e pergunte especificamente sobre a disponibilidade ou situação dele. Se a nota disser 'Apto Rua X', pergunte 'como está o Apto da Rua X'.";
+        } else if (contact.type === 'Construtor') {
+            specificStrategy = "O contato é construtor. Pergunte sobre o andamento das obras citadas na observação e se ele está buscando novas áreas/terrenos para investir.";
+        } else {
+            specificStrategy = "O contato é cliente comprador. Use a observação para lembrar o que ele buscava (ex: 'casa 3 quartos') e pergunte se podemos retomar a busca com esse perfil.";
+        }
+
+        const prompt = `
+          Você é ${agent}, corretor da imobiliária ${agency}.
+          Escreva uma mensagem de WhatsApp para ${contact.name}.
+          
+          OBJETIVO: Retomar contato (Follow-up).
+          TIPO DO CONTATO: ${contact.type}.
+          ${internalNotes}
+          
+          ESTRATÉGIA: ${specificStrategy}
+          
+          INSTRUÇÕES DE SEGURANÇA:
+          1. A 'OBSERVAÇÃO INTERNA' é para SEU uso. NÃO repita ela como se fosse um robô (ex: não diga 'Vi aqui na minha anotação que você...'). Aja naturalmente.
+          2. Se a observação contiver opiniões negativas (ex: 'cliente chato'), IGNORE a opinião e foque apenas no imóvel/interesse.
+          
+          Tom de Voz: ${tone}.
+          Formato: Curto, direto, estilo WhatsApp. Sem hashtags.
+        `;
+
+        const response = await ai.models.generateContent({
+            model: modelId,
+            contents: prompt,
+        });
+
+        return response.text.trim();
+
+    } catch (error) {
+        console.error("❌ Erro na IA:", error.message);
+        return generateTemplateFallback(contact, settings);
+    }
+}
+
+function generateTemplateFallback(contact, settings) {
+    // Template de emergência caso a API falhe ou não esteja configurada
+    const agent = settings.agentName || "Seu Corretor";
+    const agency = settings.agencyName || "nossa imobiliária";
+    
+    // Tentativa simples de inserir contexto se possível
+    const noteContext = contact.notes && contact.notes.length < 50 ? ` (${contact.notes})` : "";
+
+    switch (contact.type) {
+        case 'Proprietário':
+            return `Olá ${contact.name}, aqui é ${agent} da ${agency}. Como estão as coisas? Gostaria de saber se o imóvel${noteContext} ainda está disponível.`;
+        case 'Construtor':
+            return `Olá ${contact.name}, aqui é ${agent} da ${agency}. Tudo bem? Estou atualizando nossa carteira. Ainda está buscando áreas ou focando nas obras atuais?`;
+        case 'Cliente/Comprador':
+        default:
+            return `Olá ${contact.name}, aqui é ${agent} da ${agency}. Tudo bem? Passando para saber se continua na busca pelo seu imóvel${noteContext} ou se podemos retomar.`;
+    }
+}
 
 // --- FUNÇÕES AUXILIARES ---
 
@@ -26,28 +110,11 @@ function formatPhone(phone) {
     return p;
 }
 
-// Comparação flexível de telefones (com/sem 55, com/sem 9)
 function isSamePhone(p1, p2) {
     if (!p1 || !p2) return false;
     const n1 = p1.replace(/\D/g, '');
     const n2 = p2.replace(/\D/g, '');
-    // Pega os últimos 8 dígitos (garante unicidade sem depender de DDD/DDI)
     return n1.slice(-8) === n2.slice(-8);
-}
-
-function generateTemplateMessage(contact, settings) {
-    const agent = settings.agentName || "Seu Corretor";
-    const agency = settings.agencyName || "nossa imobiliária";
-    
-    switch (contact.type) {
-        case 'Proprietário':
-            return `Olá ${contact.name}, aqui é ${agent} da ${agency}. Como estão as coisas? Gostaria de saber se o imóvel ainda está disponível para venda ou se houve alguma mudança. Abraço!`;
-        case 'Construtor':
-            return `Olá ${contact.name}, aqui é ${agent} da ${agency}. Tudo bem? Estou atualizando nossa carteira de áreas e lembrei de você. Ainda está buscando novos terrenos na região?`;
-        case 'Cliente/Comprador':
-        default:
-            return `Olá ${contact.name}, aqui é ${agent} da ${agency}. Tudo bem? Passando para saber se continua na busca pelo seu imóvel ou se podemos retomar a pesquisa com novas opções.`;
-    }
 }
 
 // --- BANCO DE DADOS ---
@@ -85,7 +152,6 @@ let qrCodeData = null;
 let clientStatus = 'initializing';
 let isReady = false;
 
-// Configuração para rodar no Render (Linux) e Local
 const client = new Client({
     authStrategy: new LocalAuth({ clientId: "imobiflow-crm-v2" }),
     puppeteer: {
@@ -127,19 +193,16 @@ client.on('disconnected', async (reason) => {
     console.log('⚠️ Desconectado:', reason);
     isReady = false;
     clientStatus = 'disconnected';
-    // Reconexão graciosa
     try { await client.destroy(); } catch(e) {}
     setTimeout(() => { client.initialize().catch(console.error); }, 5000);
 });
 
 client.on('message', async msg => {
-    // Ignora mensagens de status, grupos ou enviadas por mim mesmo (via celular/web)
     if(msg.isStatus || msg.from.includes('@g.us') || msg.fromMe) return;
 
     const fromNumber = msg.from.replace('@c.us', '');
     console.log(`📩 Nova mensagem de: ${fromNumber}`);
     
-    // --- LÓGICA DE NOTIFICAÇÃO NO SERVIDOR ---
     const contacts = getContacts();
     let updated = false;
 
@@ -155,8 +218,6 @@ client.on('message', async msg => {
 
     if (updated) {
         saveContacts(contacts);
-    } else {
-        console.log(`❓ Mensagem de ${fromNumber} não pertence a nenhum contato cadastrado.`);
     }
 });
 
@@ -180,46 +241,45 @@ async function runAutomationCycle() {
     const now = Date.now();
 
     for (let c of contacts) {
-        // Pula se automação desligada para o contato ou se tem resposta não lida
         if (c.autoPilotEnabled === false) continue;
         if (c.hasUnreadReply) {
             console.log(`✋ ${c.name}: Tem resposta não lida. Pulando.`);
             continue;
         }
         
-        // Apenas estágio IDLE (Pendente) é processado automaticamente pelo tempo
         if (c.automationStage === 0) { // IDLE
             const lastDateStr = c.lastContactDate || new Date().toISOString();
             const lastDate = new Date(lastDateStr).getTime();
-            const frequency = c.followUpFrequencyDays || 30; // Default 30 dias
+            const frequency = c.followUpFrequencyDays || 30;
             
             const diffTime = Math.abs(now - lastDate);
             const daysPassed = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
             
-            console.log(`🔎 ${c.name}: Passaram ${daysPassed} dias (Meta: ${frequency}). Status: ${daysPassed >= frequency ? 'VENCIDO (Enviar)' : 'NO PRAZO (Aguardar)'}`);
+            console.log(`🔎 ${c.name}: Passaram ${daysPassed} dias (Meta: ${frequency}).`);
 
             if (daysPassed >= frequency) {
-                console.log(`⚡ Disparando mensagem para ${c.name}...`);
+                console.log(`⚡ Gerando IA para ${c.name}...`);
                 
-                const msg = generateTemplateMessage(c, settings);
+                // GERAÇÃO COM IA NO SERVIDOR
+                const msg = await generateAIMessage(c, settings);
+                
                 const chatId = `${formatPhone(c.phone)}@c.us`;
                 
                 try {
                     const numberId = await client.getNumberId(chatId);
                     const target = numberId ? numberId._serialized : chatId;
                     await client.sendMessage(target, msg);
-                    console.log(`✅ Mensagem enviada para ${c.name}`);
+                    console.log(`✅ IA Enviou para ${c.name}: "${msg.substring(0, 30)}..."`);
                     
-                    // Atualiza Estado
                     c.lastAutomatedMsgDate = new Date().toISOString();
-                    c.lastContactDate = new Date().toISOString(); // Atualiza data para evitar loop
-                    c.automationStage = 1; // WAITING_REPLY_1
+                    c.lastContactDate = new Date().toISOString();
+                    c.automationStage = 1;
                     changed = true;
                 } catch (e) {
                     console.error(`❌ Erro ao enviar para ${c.name}:`, e.message);
                 }
                 
-                await new Promise(r => setTimeout(r, 5000)); // Pausa entre envios
+                await new Promise(r => setTimeout(r, 8000)); // Delay maior para a IA
             }
         }
     }
@@ -227,27 +287,32 @@ async function runAutomationCycle() {
     if (changed) saveContacts(contacts);
 }
 
-// Roda o ciclo a cada 10 minutos
 setInterval(runAutomationCycle, 10 * 60 * 1000);
-// Roda uma verificação rápida 10s após ligar
 setTimeout(runAutomationCycle, 10000);
 
 // --- ENDPOINTS ---
 
-app.get('/status', (req, res) => {
-    res.json({ status: clientStatus, isReady: isReady });
-});
-
+app.get('/status', (req, res) => res.json({ status: clientStatus, isReady: isReady }));
 app.get('/qr', (req, res) => res.json({ qrCode: qrCodeData, ts: Date.now() }));
 
-// Rota para disparar automação manualmente (ex: após importação)
 app.get('/trigger-automation', (req, res) => {
-    console.log("⚡ Trigger manual de automação solicitado.");
+    console.log("⚡ Trigger manual solicitado.");
     runAutomationCycle(); 
     res.json({ success: true });
 });
 
-// CHAT AO VIVO
+// NOVA ROTA: GERAR MENSAGEM SOB DEMANDA (PARA O BOTÃO MANUAL DO SITE)
+app.post('/generate-message', async (req, res) => {
+    try {
+        const { contact, settings } = req.body;
+        console.log(`🧠 Solicitada geração manual IA para ${contact.name}`);
+        const msg = await generateAIMessage(contact, settings);
+        res.json({ message: msg });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 app.get('/chat/:phone', async (req, res) => {
     if (!isReady) return res.status(503).json({ error: 'Offline' });
     try {
@@ -264,9 +329,7 @@ app.get('/chat/:phone', async (req, res) => {
         }));
         
         res.json(history);
-    } catch (e) {
-        res.json([]);
-    }
+    } catch (e) { res.json([]); }
 });
 
 app.post('/toggle-automation', (req, res) => {
@@ -293,24 +356,20 @@ app.post('/send', async (req, res) => {
     } catch (e) { res.status(500).json({ success: false, error: e.message }); }
 });
 
-// Endpoint para Importar Contatos do WhatsApp
 app.get('/whatsapp-contacts', async (req, res) => {
     if (!isReady) return res.status(503).json({ error: 'Offline' });
     try {
-        // CORREÇÃO: Usamos getChats() em vez de getContacts() para evitar erros do WWebJS
         const chats = await client.getChats();
         console.log(`🔎 Importação: Encontrados ${chats.length} conversas.`);
         
-        // Filtra grupos e mapeia
         const filtered = chats
             .filter(c => !c.isGroup)
             .map(c => ({
                 name: c.name || c.id.user,
                 phone: c.id.user,
-                timestamp: c.timestamp // Captura a data da última mensagem (segundos)
+                timestamp: c.timestamp
             }));
 
-        // Remove duplicatas
         const unique = [];
         const seen = new Set();
         for(const c of filtered) {
@@ -319,18 +378,16 @@ app.get('/whatsapp-contacts', async (req, res) => {
                 unique.push(c);
             }
         }
-            
-        console.log(`✅ Importação: ${unique.length} contatos válidos processados.`);
         res.json(unique);
-    } catch (e) {
-        console.error("Erro importação:", e);
-        res.status(500).json({ error: e.message });
-    }
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 client.initialize().catch(console.error);
 
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Servidor ImobiFlow rodando em porta ${PORT}`);
-    console.log('🤖 Automação de Background: ATIVA (Verificando a cada 10min)');
+    console.log('🤖 Automação IA de Background: ATIVA');
+    if (!TEAM_GEMINI_API_KEY || TEAM_GEMINI_API_KEY.length < 20) {
+        console.log("⚠️ AVISO: CHAVE API DA EQUIPE NÃO CONFIGURADA NO SERVER.JS. IA NÃO FUNCIONARÁ.");
+    }
 });

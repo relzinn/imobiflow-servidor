@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { AppSettings } from '../types';
 
@@ -18,15 +17,15 @@ export const StrategyWizard: React.FC<StrategyWizardProps> = ({ onComplete }) =>
     onComplete({
       agentName: name,
       agencyName: agency || "Imobiliária",
-      apiKey: '',
       messageTone: tone,
       defaultFrequencyOwner: days.owner,
       defaultFrequencyBuilder: days.builder,
       defaultFrequencyClient: days.client,
       integrationMode: 'server',
       serverUrl: serverUrl,
-      preferredWhatsappMode: 'app', // Irrelevante no modo server, mas mantido para tipagem
-      whatsappConnected: false
+      preferredWhatsappMode: 'app', 
+      whatsappConnected: false,
+      automationActive: false
     });
   };
 

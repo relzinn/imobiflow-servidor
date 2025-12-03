@@ -40,7 +40,7 @@ export interface ChatMessage {
 export interface AppSettings {
   agentName: string;
   agencyName: string;
-  apiKey?: string;
+  // apiKey removida - agora é gerida no servidor pela equipe
   messageTone: 'Formal' | 'Casual' | 'Persuasivo' | 'Amigável' | 'Consultivo' | 'Urgente' | 'Entusiasta' | 'Elegante';
   defaultFrequencyOwner: number;
   defaultFrequencyBuilder: number;

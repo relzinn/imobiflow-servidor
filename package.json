@@ -1,4 +1,3 @@
-
 {
   "name": "imobiflow-crm",
   "version": "1.0.0",
@@ -15,6 +14,7 @@
     "express": "^4.18.2",
     "qrcode": "^1.5.3",
     "qrcode-terminal": "^0.12.0",
-    "whatsapp-web.js": "^1.23.0"
+    "whatsapp-web.js": "^1.23.0",
+    "@google/genai": "^0.1.1"
   }
 }
