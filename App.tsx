@@ -271,6 +271,17 @@ const App: React.FC = () => {
         setConfirmData({show:false, msg:'', action:()=>{}});
     }});
   };
+
+  const handleMarkAsRead = async (c: Contact) => {
+      if (c.hasUnreadReply) {
+          await handleSaveContact({...c, hasUnreadReply: false});
+      }
+  };
+
+  const handleOpenChat = async (c: Contact) => {
+      await handleMarkAsRead(c); // Limpa notificação ao abrir chat
+      setChatContact(c);
+  };
   
   const handleForceTest = async (c: Contact) => {
       // Retroage a data do contato para garantir disparo
@@ -341,20 +352,20 @@ const App: React.FC = () => {
                 </div>
             </div>
             <div className="mt-auto flex flex-col gap-2">
-                <button onClick={() => setIsSettingsOpen(true)} className="text-sm bg-slate-800 p-2 rounded">⚙️ Ajustes</button>
-                <button onClick={syncServer} className="text-xs text-center text-gray-500">Sync: {lastSync}</button>
+                <button onClick={() => setIsSettingsOpen(true)} className="text-sm bg-slate-800 p-2 rounded" title="Alterar tom de voz e dados">⚙️ Ajustes</button>
+                <button onClick={syncServer} className="text-xs text-center text-gray-500" title="Forçar sincronização">Sync: {lastSync}</button>
             </div>
         </aside>
 
         <main className="flex-1 p-8 overflow-y-auto">
             <header className="flex justify-between items-center mb-6">
                 <h2 className="text-2xl font-bold">Contatos</h2>
-                <button onClick={() => { setEditingContact(null); setIsModalOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded font-bold"><Icons.Plus /> Novo</button>
+                <button onClick={() => { setEditingContact(null); setIsModalOpen(true); }} className="bg-blue-600 text-white px-4 py-2 rounded font-bold" title="Adicionar novo contato"><Icons.Plus /> Novo</button>
             </header>
 
             <div className="flex gap-2 mb-4">
                 {['ALL', ...Object.values(ContactType)].map(t => (
-                    <button key={t} onClick={() => setFilterType(t)} className={`px-4 py-1 rounded-full text-sm font-bold ${filterType === t ? 'bg-blue-600 text-white' : 'bg-white border'}`}>{t === 'ALL' ? 'Todos' : t}</button>
+                    <button key={t} onClick={() => setFilterType(t)} className={`px-4 py-1 rounded-full text-sm font-bold ${filterType === t ? 'bg-blue-600 text-white' : 'bg-white border'}`} title={`Filtrar por ${t}`}>{t === 'ALL' ? 'Todos' : t}</button>
                 ))}
             </div>
 
@@ -370,24 +381,24 @@ const App: React.FC = () => {
                              return (
                             <React.Fragment key={c.id}>
                                 <tr className={`hover:bg-gray-50 ${c.hasUnreadReply ? 'bg-yellow-50' : ''}`}>
-                                    <td className="p-4"><button onClick={() => handleSaveContact({...c, autoPilotEnabled: !c.autoPilotEnabled})} title={c.autoPilotEnabled!==false?"Pausar":"Ativar"} className={`w-8 h-8 rounded-full flex items-center justify-center ${c.autoPilotEnabled!==false?'bg-green-100 text-green-600':'bg-gray-100 text-gray-400'}`}>{c.autoPilotEnabled!==false?<Icons.Pause/>:<Icons.Play/>}</button></td>
+                                    <td className="p-4"><button onClick={() => handleSaveContact({...c, autoPilotEnabled: !c.autoPilotEnabled})} title={c.autoPilotEnabled!==false?"Pausar Automação para este contato":"Ativar Automação"} className={`w-8 h-8 rounded-full flex items-center justify-center ${c.autoPilotEnabled!==false?'bg-green-100 text-green-600':'bg-gray-100 text-gray-400'}`}>{c.autoPilotEnabled!==false?<Icons.Pause/>:<Icons.Play/>}</button></td>
                                     <td className="p-4 font-bold">{c.name}<div className="text-xs font-normal text-gray-500">{c.type}</div>{c.hasUnreadReply && <div className="text-xs text-yellow-600 font-bold animate-pulse">🔔 Nova Mensagem</div>}</td>
                                     <td className="p-4">
                                         {c.automationStage === AutomationStage.IDLE 
-                                            ? <span className="text-gray-500">Pendente ({daysWait}d)</span> 
-                                            : <span className="text-blue-600 font-bold">Aguardando ({daysWait}d)</span>
+                                            ? <span className="text-gray-500" title="Aguardando data do próximo ciclo">Pendente ({daysWait}d)</span> 
+                                            : <span className="text-blue-600 font-bold" title="Mensagem enviada, aguardando resposta">Aguardando ({daysWait}d)</span>
                                         }
                                     </td>
                                     <td className="p-4 text-right flex justify-end gap-2">
                                         <button onClick={() => handleForceTest(c)} className="p-2 bg-yellow-50 text-yellow-600 rounded" title="⚡ TESTE: Forçar Vencimento Agora"><Icons.Flash /></button>
-                                        <button onClick={() => setChatContact(c)} className="p-2 bg-green-50 text-green-600 rounded" title="Abrir Chat Ao Vivo"><Icons.WhatsApp /></button>
-                                        <button onClick={() => { setSelectedId(c.id); generateFollowUpMessage(c, settings!, false).then(setGenMsg); }} className="p-2 bg-blue-50 text-blue-600 rounded" title="Gerar Msg"><Icons.Message /></button>
-                                        <button onClick={() => { setEditingContact(c); setIsModalOpen(true); }} className="p-2 bg-gray-50 text-gray-600 rounded" title="Editar"><Icons.Users /></button>
-                                        <button onClick={() => handleDelete(c.id)} className="p-2 bg-red-50 text-red-600 rounded" title="Excluir"><Icons.Trash /></button>
+                                        <button onClick={() => handleOpenChat(c)} className="p-2 bg-green-50 text-green-600 rounded" title="Abrir Chat Ao Vivo (Marca como lida)"><Icons.WhatsApp /></button>
+                                        <button onClick={() => { setSelectedId(c.id); generateFollowUpMessage(c, settings!, false).then(setGenMsg); }} className="p-2 bg-blue-50 text-blue-600 rounded" title="Gerar Mensagem de Follow-up"><Icons.Message /></button>
+                                        <button onClick={() => { setEditingContact(c); setIsModalOpen(true); }} className="p-2 bg-gray-50 text-gray-600 rounded" title="Editar Contato"><Icons.Users /></button>
+                                        <button onClick={() => handleDelete(c.id)} className="p-2 bg-red-50 text-red-600 rounded" title="Excluir Contato"><Icons.Trash /></button>
                                     </td>
                                 </tr>
                                 {selectedId === c.id && (
-                                    <tr className="bg-blue-50/50"><td colSpan={4} className="p-4"><div className="bg-white border p-4 rounded shadow-sm max-w-2xl mx-auto"><textarea className="w-full border rounded p-2 mb-2" rows={3} value={genMsg} onChange={e => setGenMsg(e.target.value)} /><div className="flex justify-end gap-2"><button onClick={() => setSelectedId(null)} className="px-3 py-1 bg-gray-200 rounded">Cancelar</button><button onClick={() => sendManual(c)} disabled={sending} className="px-3 py-1 bg-blue-600 text-white rounded font-bold">Enviar</button></div></div></td></tr>
+                                    <tr className="bg-blue-50/50"><td colSpan={4} className="p-4"><div className="bg-white border p-4 rounded shadow-sm max-w-2xl mx-auto"><textarea className="w-full border rounded p-2 mb-2" rows={3} value={genMsg} onChange={e => setGenMsg(e.target.value)} /><div className="flex justify-end gap-2"><button onClick={() => setSelectedId(null)} className="px-3 py-1 bg-gray-200 rounded" title="Cancelar envio">Cancelar</button><button onClick={() => sendManual(c)} disabled={sending} className="px-3 py-1 bg-blue-600 text-white rounded font-bold" title="Confirmar envio">Enviar</button></div></div></td></tr>
                                 )}
                             </React.Fragment>
                         );})}
@@ -395,7 +406,7 @@ const App: React.FC = () => {
                 </table>
             </div>
 
-            {unread.length > 0 && <button onClick={() => setIsInboxOpen(true)} className="fixed bottom-6 right-6 bg-red-600 text-white p-4 rounded-full shadow-xl animate-bounce z-50"><Icons.Message /> <span className="absolute -top-1 -right-1 bg-white text-red-600 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold border">{unread.length}</span></button>}
+            {unread.length > 0 && <button onClick={() => setIsInboxOpen(true)} className="fixed bottom-6 right-6 bg-red-600 text-white p-4 rounded-full shadow-xl animate-bounce z-50" title="Ver mensagens não lidas"><Icons.Message /> <span className="absolute -top-1 -right-1 bg-white text-red-600 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold border">{unread.length}</span></button>}
 
             <ContactModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveContact} initialContact={editingContact} settings={settings} />
             <QRCodeModal isOpen={isQRCodeOpen} onClose={() => setIsQRCodeOpen(false)} onConnected={() => { setServerStatus(true); setIsQRCodeOpen(false); }} serverUrl={settings?.serverUrl} onUrlChange={(u) => persistSettings({...settings!, serverUrl: u})} />
@@ -412,8 +423,9 @@ const App: React.FC = () => {
                                     <div className="font-bold">{c.name}</div>
                                     <div className="text-sm my-2 italic text-gray-700">"{c.lastReplyContent || 'Nova mensagem'}"</div>
                                     <div className="flex gap-2">
-                                        <button onClick={() => setChatContact(c)} className="flex-1 bg-green-600 text-white py-1 rounded text-xs font-bold" title="Abrir conversa">Chat</button>
-                                        <button onClick={() => { setIsInboxOpen(false); handleKeepContact(c); }} className="flex-1 bg-blue-600 text-white py-1 rounded text-xs font-bold" title="Processar atualização">Atualizar</button>
+                                        <button onClick={() => handleOpenChat(c)} className="flex-1 bg-green-600 text-white py-1 rounded text-xs font-bold" title="Abrir conversa e marcar como lida">Chat</button>
+                                        <button onClick={() => { setIsInboxOpen(false); handleKeepContact(c); }} className="flex-1 bg-blue-600 text-white py-1 rounded text-xs font-bold" title="Atualizar informações do contato e resetar ciclo">Atualizar</button>
+                                        <button onClick={() => { setIsInboxOpen(false); handleFinalizeContact(c); }} className="flex-1 bg-red-600 text-white py-1 rounded text-xs font-bold" title="Remover contato do sistema">Finalizar</button>
                                     </div>
                                 </div>
                             ))}

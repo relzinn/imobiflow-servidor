@@ -67,7 +67,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       automationStage: initialContact?.automationStage ?? AutomationStage.IDLE,
       autoPilotEnabled: initialContact?.autoPilotEnabled ?? true,
       lastReplyTimestamp: initialContact?.lastReplyTimestamp,
-      hasUnreadReply: initialContact?.hasUnreadReply
+      hasUnreadReply: false // FORÇA A LIMPEZA DO STATUS DE NÃO LIDO AO SALVAR
     });
     onClose();
   };
