@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { StrategyWizard } from './components/StrategyWizard';
 import { ContactModal } from './components/ContactModal';
@@ -92,10 +93,19 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
             if (t === ContactType.OWNER) freq = settings.defaultFrequencyOwner;
             else if (t === ContactType.BUILDER) freq = settings.defaultFrequencyBuilder;
             else freq = settings.defaultFrequencyClient;
+            
+            // Lógica de Data Inteligente
+            let lastDateStr = new Date().toISOString().split('T')[0];
+            if (c.timestamp) {
+                // Se temos a data da msg do zap, usamos ela.
+                // Isso permite que o sistema saiba se já venceu o prazo.
+                lastDateStr = new Date(c.timestamp * 1000).toISOString().split('T')[0];
+            }
+
             return {
                 id: generateId(), name: c.name, phone: c.phone.startsWith('55') ? c.phone : '55'+c.phone,
-                type: t, notes: c.customNotes || 'Importado', 
-                lastContactDate: c.timestamp ? new Date(c.timestamp*1000).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                type: t, notes: c.customNotes || 'Importado via WhatsApp', 
+                lastContactDate: lastDateStr,
                 followUpFrequencyDays: freq, messageTone: c.messageTone, automationStage: AutomationStage.IDLE, autoPilotEnabled: true, hasUnreadReply: false
             };
         });
@@ -109,7 +119,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
         return (
             <div className="fixed inset-0 bg-black/60 z-[95] flex items-center justify-center p-4">
                 <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
-                    <div className="flex justify-between mb-4"><h3 className="font-bold text-blue-600">Qualificar Contato ({currentReviewIndex + 1}/{reviewQueue.length})</h3><button onClick={onClose}>✕</button></div>
+                    <div className="flex justify-between mb-4"><h3 className="font-bold text-blue-600">Qualificar Contato ({currentReviewIndex + 1}/{reviewQueue.length})</h3><button onClick={onClose} className="font-bold text-xl">✕</button></div>
                     <div className="bg-gray-100 p-2 rounded mb-4 text-center font-mono font-bold">{reviewQueue[currentReviewIndex].phone}</div>
                     <div className="space-y-3">
                         <div><label className="text-xs font-bold uppercase">Nome</label><input className="w-full border p-2 rounded" value={reviewName} onChange={e=>setReviewName(e.target.value)}/></div>
@@ -127,8 +137,8 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
         <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center p-4">
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg h-[600px] flex flex-col animate-in zoom-in-95">
                 <div className="p-4 border-b flex justify-between"><h3 className="font-bold">Importar</h3><button onClick={onClose} className="font-bold text-xl">✕</button></div>
-                <div className="p-4 bg-gray-50 flex gap-2"><input className="w-full border rounded p-2" placeholder="Buscar..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)}/><button onClick={()=>setSearchTerm('')} className="px-3 border rounded bg-white">✕</button></div>
-                <div className="flex-1 overflow-y-auto p-2">{loading?<div className="text-center p-10">Carregando...</div>:waContacts.filter(c=>c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(c=>(<div key={c.phone} onClick={()=>handleToggle(c.phone)} className={`flex p-2 hover:bg-gray-100 cursor-pointer ${selected.has(c.phone)?'bg-blue-50 border':''}`}><input type="checkbox" checked={selected.has(c.phone)} readOnly className="mr-3"/><div><div className="font-bold">{c.name}</div><div className="text-xs text-gray-500">{c.phone}</div></div></div>))}</div>
+                <div className="p-4 bg-gray-50 flex gap-2"><div className="relative w-full"><input className="w-full border rounded p-2 pr-8" placeholder="Buscar..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)}/><button onClick={()=>setSearchTerm('')} className="absolute right-2 top-2 text-gray-400 hover:text-gray-600 font-bold">✕</button></div></div>
+                <div className="flex-1 overflow-y-auto p-2">{loading?<div className="text-center p-10">Carregando conversas do WhatsApp...</div>:waContacts.filter(c=>c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(c=>(<div key={c.phone} onClick={()=>handleToggle(c.phone)} className={`flex p-2 hover:bg-gray-100 cursor-pointer ${selected.has(c.phone)?'bg-blue-50 border':''}`}><input type="checkbox" checked={selected.has(c.phone)} readOnly className="mr-3"/><div><div className="font-bold">{c.name}</div><div className="text-xs text-gray-500">{c.phone}</div></div></div>))}</div>
                 <div className="p-4 border-t flex justify-between bg-gray-50"><span>{selected.size} selecionados</span><div className="flex gap-2"><button onClick={onClose} className="bg-gray-200 px-4 py-2 rounded font-bold">Cancelar</button><button onClick={handleStartImport} disabled={!selected.size} className="bg-blue-600 text-white px-6 py-2 rounded font-bold disabled:opacity-50">Qualificar</button></div></div>
             </div>
         </div>
@@ -169,15 +179,27 @@ const ChatModal: React.FC<{ contact: Contact | null, onClose: () => void, server
 // --- SETTINGS MODAL ---
 const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, settings: AppSettings, onSave: (s: AppSettings) => void }> = ({ isOpen, onClose, settings, onSave }) => {
     const [s, setS] = useState(settings);
+    const [showKey, setShowKey] = useState(false);
     useEffect(()=>setS(settings),[settings,isOpen]);
     if(!isOpen) return null;
     return (
         <div className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4">
             <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
-                <h2 className="font-bold text-xl">Ajustes</h2>
-                <div><label className="text-xs font-bold text-gray-500">NOME</label><input className="w-full border p-2 rounded" value={s.agentName} onChange={e=>setS({...s,agentName:e.target.value})}/></div>
-                <div><label className="text-xs font-bold text-gray-500">IMOBILIÁRIA</label><input className="w-full border p-2 rounded" value={s.agencyName} onChange={e=>setS({...s,agencyName:e.target.value})}/></div>
-                <div className="pt-4 border-t"><h4 className="font-bold text-xs uppercase mb-2">Ciclos (Dias)</h4><div className="grid grid-cols-3 gap-2">
+                <h2 className="font-bold text-xl">Ajustes Gerais</h2>
+                <div><label className="text-xs font-bold text-gray-500">NOME DO CORRETOR</label><input className="w-full border p-2 rounded" value={s.agentName} onChange={e=>setS({...s,agentName:e.target.value})}/></div>
+                <div><label className="text-xs font-bold text-gray-500">NOME DA IMOBILIÁRIA</label><input className="w-full border p-2 rounded" value={s.agencyName} onChange={e=>setS({...s,agencyName:e.target.value})}/></div>
+                
+                <div>
+                    <label className="text-xs font-bold text-gray-500 mb-1">TOM DE VOZ PADRÃO</label>
+                    <select className="w-full border p-2 rounded" value={s.messageTone} onChange={e => setS({...s, messageTone: e.target.value as any})}>
+                        <option value="Casual">Casual</option><option value="Formal">Formal</option><option value="Amigável">Amigável</option><option value="Persuasivo">Persuasivo</option>
+                        <option value="Consultivo">Consultivo</option><option value="Elegante">Elegante</option><option value="Urgente">Urgente</option><option value="Entusiasta">Entusiasta</option>
+                    </select>
+                </div>
+
+                {/* API Key Removida da interface pois agora é no servidor */}
+                
+                <div className="pt-4 border-t"><h4 className="font-bold text-xs uppercase mb-2">Ciclos Padrão (Dias)</h4><div className="grid grid-cols-3 gap-2">
                     <div><label className="text-[10px]">Prop</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyOwner} onChange={e=>setS({...s,defaultFrequencyOwner:Number(e.target.value)})}/></div>
                     <div><label className="text-[10px]">Const</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyBuilder} onChange={e=>setS({...s,defaultFrequencyBuilder:Number(e.target.value)})}/></div>
                     <div><label className="text-[10px]">Cli</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyClient} onChange={e=>setS({...s,defaultFrequencyClient:Number(e.target.value)})}/></div>
@@ -241,12 +263,14 @@ const App: React.FC = () => {
   };
 
   const handleDelete = (id:string) => setConfirmData({show:true, msg:'Excluir contato?', action:()=>persistContacts(contacts.filter(c=>c.id!==id))});
+  
+  // Ação Raio: Força teste + Reset de estágio
   const handleForceTest = async (c: Contact) => {
       const past = new Date(); past.setDate(past.getDate()- (c.followUpFrequencyDays + 2));
       const updated = { ...c, lastContactDate: past.toISOString().split('T')[0], automationStage: AutomationStage.IDLE };
       await persistContacts(contacts.map(x=>x.id===c.id?updated:x));
       fetch(`${settings!.serverUrl}/trigger-automation`,{headers:getHeaders()});
-      setToast({msg:'Teste disparado', type:'success'});
+      setToast({msg:'Teste disparado (Ciclo Resetado)', type:'success'});
   };
 
   const handleMarkAsRead = async (c: Contact) => {
@@ -341,7 +365,23 @@ const App: React.FC = () => {
                 </div>
             </header>
 
-            <div className="flex gap-2 mb-4">{['ALL',...Object.values(ContactType)].map(t=><button key={t} onClick={()=>setFilterType(t)} className={`px-4 py-1 rounded-full text-sm font-bold ${filterType===t?'bg-blue-600 text-white':'bg-white border'}`}>{t==='ALL'?'Todos':t}</button>)}</div>
+            <div className="flex gap-2 mb-4">
+                {['ALL',...Object.values(ContactType)].map(t => {
+                    const typeContacts = contacts.filter(c => t === 'ALL' || c.type === t);
+                    const total = typeContacts.length;
+                    // Count contacts in automation waiting stage (1 or 2)
+                    const waiting = typeContacts.filter(c => c.automationStage === 1 || c.automationStage === 2).length;
+                    
+                    return (
+                        <button key={t} onClick={()=>setFilterType(t)} className={`px-4 py-1 rounded-full text-sm font-bold flex items-center gap-2 ${filterType===t?'bg-blue-600 text-white':'bg-white border'}`}>
+                            {t==='ALL'?'Todos':t}
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full ${filterType===t ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'}`}>
+                                {waiting} / {total}
+                            </span>
+                        </button>
+                    );
+                })}
+            </div>
 
             <div className="bg-white rounded-xl shadow border overflow-hidden">
                 <table className="w-full text-left">
@@ -349,15 +389,20 @@ const App: React.FC = () => {
                     <tbody className="divide-y text-sm">
                         {filtered.map(c => {
                              const lastDate = new Date(c.lastContactDate||Date.now());
-                             const daysWait = Math.ceil((Date.now()-lastDate.getTime())/(1000*60*60*24));
+                             const nextDate = new Date(lastDate);
+                             nextDate.setDate(lastDate.getDate() + c.followUpFrequencyDays);
+                             
+                             const daysWait = Math.floor((Date.now()-lastDate.getTime())/(1000*60*60*24));
                              const isAlert = c.automationStage === 3;
                              return (
                             <React.Fragment key={c.id}>
                                 <tr className={`hover:bg-gray-50 ${c.hasUnreadReply?'bg-yellow-50':isAlert?'bg-red-50':''}`}>
-                                    <td className="p-4"><button onClick={()=>persistContacts(contacts.map(x=>x.id===c.id?{...x,autoPilotEnabled:!c.autoPilotEnabled}:x))} className={`w-8 h-8 rounded-full flex items-center justify-center ${c.autoPilotEnabled!==false?'bg-green-100 text-green-600':'bg-gray-100 text-gray-400'}`}>{c.autoPilotEnabled!==false?<Icons.Pause/>:<Icons.Play/>}</button></td>
+                                    <td className="p-4"><button onClick={()=>persistContacts(contacts.map(x=>x.id===c.id?{...x,autoPilotEnabled:!c.autoPilotEnabled}:x))} className={`w-8 h-8 rounded-full flex items-center justify-center ${c.autoPilotEnabled!==false?'bg-green-100 text-green-600':'bg-gray-100 text-gray-400'}`} title={c.autoPilotEnabled!==false?'Pausar automação':'Ativar automação'}>{c.autoPilotEnabled!==false?<Icons.Pause/>:<Icons.Play/>}</button></td>
                                     <td className="p-4 font-bold">{c.name}<div className="text-xs font-normal text-gray-500">{c.type}</div>{c.hasUnreadReply && <div className="text-xs text-yellow-600 font-bold animate-pulse">🔔 Nova Mensagem</div>}</td>
                                     <td className="p-4">
-                                        <div className="text-xs text-gray-500">Último: {daysWait} dias</div>
+                                        <div className="text-xs text-gray-700 font-medium">Último: {daysWait} dias atrás</div>
+                                        <div className="text-[10px] text-gray-400 mb-1">Próximo: {nextDate.toLocaleDateString('pt-BR')}</div>
+                                        
                                         {c.automationStage === 1 && <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-bold">● Aguardando (1)</span>}
                                         {c.automationStage === 2 && <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-bold">● Aguardando (2)</span>}
                                         {c.automationStage === 3 && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold animate-pulse">● SEM RETORNO</span>}
@@ -365,16 +410,16 @@ const App: React.FC = () => {
                                     <td className="p-4 text-right flex justify-end gap-2">
                                         {isAlert ? (
                                             <>
-                                                <button onClick={()=>handleResetStage(c)} className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-bold">Resetar</button>
-                                                <button onClick={()=>setConfirmData({show:true, msg:'Enviar despedida e excluir?', action:()=>handleGoodbye(c,true)})} className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-bold">Despedir</button>
+                                                <button onClick={()=>handleResetStage(c)} className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-bold" title="Zerar ciclo e manter">Resetar</button>
+                                                <button onClick={()=>setConfirmData({show:true, msg:'Enviar despedida e excluir?', action:()=>handleGoodbye(c,true)})} className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-bold" title="Finalizar e excluir">Despedir</button>
                                             </>
                                         ) : (
                                             <>
-                                                <button onClick={()=>handleForceTest(c)} className="p-2 bg-yellow-50 text-yellow-600 rounded" title="Forçar Envio"><Icons.Flash/></button>
-                                                <button onClick={()=>{handleMarkAsRead(c);setChatContact(c)}} className="p-2 bg-green-50 text-green-600 rounded" title="Chat"><Icons.WhatsApp/></button>
-                                                <button onClick={()=>{setSelectedId(c.id);generateFollowUpMessage(c,settings!,false).then(setGenMsg)}} className="p-2 bg-blue-50 text-blue-600 rounded" title="Msg Manual"><Icons.Message/></button>
-                                                <button onClick={()=>{setEditingContact(c);setIsModalOpen(true)}} className="p-2 bg-gray-50 text-gray-600 rounded" title="Editar"><Icons.Users/></button>
-                                                <button onClick={()=>handleDelete(c.id)} className="p-2 bg-red-50 text-red-600 rounded" title="Excluir"><Icons.Trash/></button>
+                                                <button onClick={()=>handleForceTest(c)} className="p-2 bg-yellow-50 text-yellow-600 rounded" title="Envio de mensagem agora"><Icons.Flash/></button>
+                                                <button onClick={()=>{handleMarkAsRead(c);setChatContact(c)}} className="p-2 bg-green-50 text-green-600 rounded" title="Abrir Chat"><Icons.WhatsApp/></button>
+                                                <button onClick={()=>{setSelectedId(c.id);generateFollowUpMessage(c,settings!,false).then(setGenMsg)}} className="p-2 bg-blue-50 text-blue-600 rounded" title="Gerar Mensagem Manual"><Icons.Message/></button>
+                                                <button onClick={()=>{setEditingContact(c);setIsModalOpen(true)}} className="p-2 bg-gray-50 text-gray-600 rounded" title="Editar Contato"><Icons.Users/></button>
+                                                <button onClick={()=>handleDelete(c.id)} className="p-2 bg-red-50 text-red-600 rounded" title="Excluir Contato"><Icons.Trash/></button>
                                             </>
                                         )}
                                     </td>
@@ -392,7 +437,7 @@ const App: React.FC = () => {
             <ImportModal isOpen={isImportOpen} onClose={()=>setIsImportOpen(false)} serverUrl={settings?.serverUrl||''} existingContacts={contacts} onImport={handleImportContacts} settings={settings!}/>
             <QRCodeModal isOpen={isQRCodeOpen} onClose={()=>setIsQRCodeOpen(false)} onConnected={()=>{setServerStatus(true);setIsQRCodeOpen(false)}} serverUrl={settings?.serverUrl} onUrlChange={u=>persistSettings({...settings!,serverUrl:u})}/>
             <SettingsModal isOpen={isSettingsOpen} onClose={()=>setIsSettingsOpen(false)} settings={settings!} onSave={persistSettings}/>
-            {isInboxOpen && <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col animate-in zoom-in-95"><div className="p-4 border-b flex justify-between"><h3 className="font-bold">Inbox ({unread.length})</h3><button onClick={()=>setIsInboxOpen(false)}>✕</button></div><div className="p-4 overflow-y-auto space-y-3">{unread.map(c=>(<div key={c.id} className="border p-3 bg-yellow-50 rounded-lg"><div className="font-bold">{c.name}</div><div className="text-sm my-2 italic text-gray-700">"{c.lastReplyContent||'Nova mensagem'}"</div><div className="flex gap-2"><button onClick={()=>{setIsInboxOpen(false);setChatContact(c);handleMarkAsRead(c)}} className="flex-1 bg-green-600 text-white py-1 rounded text-xs font-bold">Chat</button><button onClick={()=>{setIsInboxOpen(false);handleKeepContact(c)}} className="flex-1 bg-blue-600 text-white py-1 rounded text-xs font-bold">Atualizar</button><button onClick={()=>{setIsInboxOpen(false);setConfirmData({show:true,msg:'Finalizar e excluir?',action:()=>handleFinalizeContact(c)})}} className="flex-1 bg-red-600 text-white py-1 rounded text-xs font-bold">Finalizar</button></div></div>))}</div></div></div>}
+            {isInboxOpen && <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col animate-in zoom-in-95"><div className="p-4 border-b flex justify-between"><h3 className="font-bold">Inbox ({unread.length})</h3><button onClick={()=>setIsInboxOpen(false)}>✕</button></div><div className="p-4 overflow-y-auto space-y-3">{unread.map(c=>(<div key={c.id} className="border p-3 bg-yellow-50 rounded-lg"><div className="font-bold">{c.name}</div><div className="text-sm my-2 italic text-gray-700">"{c.lastReplyContent||'Nova mensagem'}"</div><div className="flex gap-2"><button onClick={()=>{setIsInboxOpen(false);setChatContact(c);handleMarkAsRead(c)}} className="flex-1 bg-green-600 text-white py-1 rounded text-xs font-bold" title="Abrir chat e marcar como lido">Chat</button><button onClick={()=>{setIsInboxOpen(false);handleKeepContact(c)}} className="flex-1 bg-blue-600 text-white py-1 rounded text-xs font-bold" title="Editar obs e manter automação">Atualizar</button><button onClick={()=>{setIsInboxOpen(false);setConfirmData({show:true,msg:'Finalizar e excluir?',action:()=>handleFinalizeContact(c)})}} className="flex-1 bg-red-600 text-white py-1 rounded text-xs font-bold" title="Excluir contato">Finalizar</button></div></div>))}</div></div></div>}
             {chatContact && <ChatModal contact={chatContact} onClose={()=>setChatContact(null)} serverUrl={settings?.serverUrl||''} />}
             {confirmData.show && <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center"><div className="bg-white p-6 rounded shadow-xl text-center"><p className="mb-4 font-bold">{confirmData.msg}</p><div className="flex gap-2 justify-center"><button onClick={()=>setConfirmData({show:false})} className="px-4 py-2 bg-gray-200 rounded">Cancelar</button><button onClick={()=>{confirmData.action();setConfirmData({show:false})}} className="px-4 py-2 bg-red-600 text-white rounded font-bold">Sim</button></div></div></div>}
             {toast && <div className={`fixed top-4 right-4 z-[80] px-4 py-2 rounded text-white font-bold ${toast.type==='success'?'bg-green-600':'bg-red-600'}`}>{toast.msg}</div>}
