@@ -24,7 +24,6 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
             fetch(`${serverUrl}/whatsapp-contacts`, { headers: {'ngrok-skip-browser-warning': 'true'} })
                 .then(res => res.json())
                 .then(data => {
-                    // Filtra contatos que JÁ estão no sistema
                     const existingPhones = new Set(existingContacts.map(c => c.phone.replace(/\D/g, '').slice(-8)));
                     const available = data.filter((c: any) => !existingPhones.has(c.phone.replace(/\D/g, '').slice(-8)));
                     setWaContacts(available);
@@ -94,7 +93,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-2">
-                    {loading ? <div className="text-center p-10">Carregando contatos do celular...</div> : (
+                    {loading ? <div className="text-center p-10">Carregando conversas do celular...</div> : (
                         <div className="space-y-1">
                             {filtered.map(c => (
                                 <div key={c.phone} className={`flex items-center p-2 rounded cursor-pointer hover:bg-gray-100 ${selected.has(c.phone) ? 'bg-blue-50 border-blue-200 border' : ''}`} onClick={() => handleToggle(c.phone)}>
@@ -105,7 +104,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
                                     </div>
                                 </div>
                             ))}
-                            {filtered.length === 0 && <div className="text-center p-4 text-gray-500">Nenhum contato novo encontrado.</div>}
+                            {filtered.length === 0 && <div className="text-center p-4 text-gray-500">Nenhuma conversa nova encontrada.</div>}
                         </div>
                     )}
                 </div>
@@ -218,7 +217,7 @@ const ChatModal: React.FC<{ contact: Contact | null, onClose: () => void, server
     );
 };
 
-// --- SETTINGS MODAL (Mantido igual) ---
+// --- SETTINGS MODAL ---
 const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, settings: AppSettings, onSave: (s: AppSettings) => void }> = ({ isOpen, onClose, settings, onSave }) => {
     const [localSettings, setLocalSettings] = useState(settings);
     useEffect(() => { setLocalSettings(settings); }, [settings, isOpen]);
@@ -353,8 +352,6 @@ const App: React.FC = () => {
             }
         }
         
-        // Simplesmente recarrega os contatos do servidor
-        // O servidor já terá marcado "hasUnreadReply" se houver novas mensagens
         if (stData.isReady) {
             fetchContacts(url);
         }
@@ -376,7 +373,7 @@ const App: React.FC = () => {
   };
   
   const handleDelete = (id: string) => {
-    setConfirmData({show: true, msg: 'Excluir contato?', action: () => {
+    setConfirmData({show: true, msg: 'Deseja finalizar o atendimento e excluir este contato?', action: () => {
         persistContacts(contacts.filter(c => c.id !== id));
         setConfirmData({show:false, msg:'', action:()=>{}});
     }});
@@ -394,15 +391,13 @@ const App: React.FC = () => {
   };
   
   const handleForceTest = async (c: Contact) => {
-      // Retroage a data do contato para garantir disparo
       const pastDate = new Date();
-      pastDate.setDate(pastDate.getDate() - (c.followUpFrequencyDays + 2)); // Volta dias suficientes
+      pastDate.setDate(pastDate.getDate() - (c.followUpFrequencyDays + 2)); 
       const updated = {...c, lastContactDate: pastDate.toISOString().split('T')[0]};
       
       const newList = contacts.map(x => x.id === c.id ? updated : x);
       await persistContacts(newList);
       
-      // Força trigger no server
       await fetch(`${settings!.serverUrl}/toggle-automation`, { 
               method: 'POST', headers: getHeaders(), 
               body: JSON.stringify({ active: true }) 
@@ -410,7 +405,13 @@ const App: React.FC = () => {
       setToast({msg: 'Teste Disparado! Verifique logs do servidor.', type: 'success'});
   };
 
-  const handleKeepContact = (c: Contact) => { setProcessingReplyId(c.id); setEditingContact(c); setIsModalOpen(true); };
+  const handleKeepContact = (c: Contact) => { 
+      // Abre modal mas não limpa flag ainda, será limpo no onSave
+      setProcessingReplyId(c.id); 
+      setEditingContact(c); 
+      setIsModalOpen(true); 
+  };
+  
   const handleFinalizeContact = (c: Contact) => handleDelete(c.id);
 
   const handleImportContacts = async (newContacts: Contact[]) => {
@@ -425,7 +426,7 @@ const App: React.FC = () => {
           await fetch(`${settings!.serverUrl}/send`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ phone: c.phone, message: genMsg }) });
           setToast({msg: 'Enviado!', type: 'success'});
           setSelectedId(null);
-          fetchContacts(); // Refresh
+          fetchContacts();
       } catch (e) { setToast({msg: 'Erro', type: 'error'}); }
       setSending(false);
   };
@@ -507,7 +508,6 @@ const App: React.FC = () => {
                     <thead className="bg-gray-50 text-xs uppercase text-gray-500"><tr><th className="p-4">Auto</th><th className="p-4">Nome</th><th className="p-4">Status</th><th className="p-4 text-right">Ações</th></tr></thead>
                     <tbody className="divide-y text-sm">
                         {filtered.map(c => {
-                             // Calcula dias em espera visualmente
                              const lastDate = new Date(c.lastContactDate || Date.now());
                              const daysWait = Math.ceil((Date.now() - lastDate.getTime())/(1000*60*60*24));
                              
@@ -563,7 +563,7 @@ const App: React.FC = () => {
             {/* INBOX MODAL */}
             {isInboxOpen && (
                 <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col">
+                    <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col animate-in zoom-in-95">
                         <div className="p-4 border-b flex justify-between"><h3 className="font-bold">Inbox ({unread.length})</h3><button onClick={() => setIsInboxOpen(false)}>✕</button></div>
                         <div className="p-4 overflow-y-auto space-y-3">
                             {unread.map(c => (
@@ -572,8 +572,8 @@ const App: React.FC = () => {
                                     <div className="text-sm my-2 italic text-gray-700">"{c.lastReplyContent || 'Nova mensagem'}"</div>
                                     <div className="flex gap-2">
                                         <button onClick={() => handleOpenChat(c)} className="flex-1 bg-green-600 text-white py-1 rounded text-xs font-bold" title="Abrir conversa e marcar como lida">Chat</button>
-                                        <button onClick={() => { setIsInboxOpen(false); handleKeepContact(c); }} className="flex-1 bg-blue-600 text-white py-1 rounded text-xs font-bold" title="Atualizar informações do contato e resetar ciclo">Atualizar</button>
-                                        <button onClick={() => { setIsInboxOpen(false); handleFinalizeContact(c); }} className="flex-1 bg-red-600 text-white py-1 rounded text-xs font-bold" title="Remover contato do sistema">Finalizar</button>
+                                        <button onClick={() => { setIsInboxOpen(false); handleKeepContact(c); }} className="flex-1 bg-blue-600 text-white py-1 rounded text-xs font-bold" title="Atualizar dados do contato e manter na lista">Atualizar</button>
+                                        <button onClick={() => { setIsInboxOpen(false); handleFinalizeContact(c); }} className="flex-1 bg-red-600 text-white py-1 rounded text-xs font-bold" title="Finalizar atendimento e excluir contato">Finalizar</button>
                                     </div>
                                 </div>
                             ))}

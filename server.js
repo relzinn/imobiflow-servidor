@@ -291,11 +291,10 @@ app.get('/whatsapp-contacts', async (req, res) => {
     if (!isReady) return res.status(503).json({ error: 'Offline' });
     try {
         // CORREÇÃO: Usamos getChats() em vez de getContacts() para evitar erros do WWebJS
-        // getChats retorna todas as conversas ativas, que é mais relevante para o CRM
         const chats = await client.getChats();
         console.log(`🔎 Importação: Encontrados ${chats.length} conversas.`);
         
-        // Filtra grupos e mapeia para o formato esperado
+        // Filtra grupos e mapeia
         const filtered = chats
             .filter(c => !c.isGroup)
             .map(c => ({
