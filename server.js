@@ -26,6 +26,14 @@ function formatPhone(phone) {
     return p;
 }
 
+// Comparação flexível de telefones (com/sem 55, com/sem 9)
+function isSamePhone(p1, p2) {
+    const n1 = p1.replace(/\D/g, '');
+    const n2 = p2.replace(/\D/g, '');
+    // Pega os últimos 8 dígitos (garante unicidade sem depender de DDD/DDI)
+    return n1.slice(-8) === n2.slice(-8);
+}
+
 function generateTemplateMessage(contact, settings) {
     const agent = settings.agentName || "Seu Corretor";
     const agency = settings.agencyName || "nossa imobiliária";
@@ -75,7 +83,6 @@ function saveSettings(s) {
 let qrCodeData = null;
 let clientStatus = 'initializing';
 let isReady = false;
-const incomingActivity = {};
 
 const client = new Client({
     authStrategy: new LocalAuth({ clientId: "imobiflow-crm-v2" }),
@@ -114,10 +121,34 @@ client.on('disconnected', async (reason) => {
 });
 
 client.on('message', async msg => {
+    // Ignora mensagens de status, grupos ou enviadas por mim mesmo
     if(msg.isStatus || msg.from.includes('@g.us') || msg.fromMe) return;
+
     const fromNumber = msg.from.replace('@c.us', '');
     console.log(`📩 Nova mensagem de: ${fromNumber}`);
-    incomingActivity[fromNumber] = { timestamp: Date.now(), body: msg.body || "Nova mensagem" };
+    
+    // --- LÓGICA DE NOTIFICAÇÃO NO SERVIDOR ---
+    // Atualiza o banco de dados DIRETAMENTE para garantir que o frontend pegue a notificação
+    const contacts = getContacts();
+    let updated = false;
+
+    for (let c of contacts) {
+        if (isSamePhone(c.phone, fromNumber)) {
+            console.log(`🔔 Contato identificado: ${c.name}. Marcando como não lida.`);
+            c.hasUnreadReply = true;
+            c.lastReplyContent = msg.body;
+            c.lastReplyTimestamp = Date.now();
+            // Se respondeu, podemos resetar estágio de automação se desejar, 
+            // mas geralmente esperamos o usuário processar no inbox.
+            updated = true;
+        }
+    }
+
+    if (updated) {
+        saveContacts(contacts);
+    } else {
+        console.log(`❓ Mensagem de ${fromNumber} não pertence a nenhum contato cadastrado.`);
+    }
 });
 
 // --- MOTOR DE AUTOMAÇÃO (BACKGROUND) ---
@@ -232,8 +263,6 @@ app.post('/toggle-automation', (req, res) => {
     res.json({ success: true, active: s.automationActive });
 });
 
-app.get('/activity', (req, res) => res.json(incomingActivity));
-app.get('/clear', (req, res) => { for (let k in incomingActivity) delete incomingActivity[k]; res.json({success:true}); });
 app.get('/contacts', (req, res) => res.json(getContacts()));
 app.post('/contacts', (req, res) => { if(saveContacts(req.body)) res.json({success:true}); else res.status(500).json({error:'Erro'}); });
 app.get('/settings', (req, res) => res.json(getSettings()));

@@ -234,7 +234,7 @@ const App: React.FC = () => {
         setServerStatus(stData.isReady);
         setLastSync(new Date().toLocaleTimeString());
 
-        // Atualiza settings remotos (para sincronizar estado do botao piloto)
+        // Atualiza settings remotos
         const setRes = await fetch(`${url}/settings`, { headers: getHeaders() });
         if(setRes.ok) {
             const remoteSettings = await setRes.json();
@@ -243,8 +243,10 @@ const App: React.FC = () => {
             }
         }
         
+        // Simplesmente recarrega os contatos do servidor
+        // O servidor já terá marcado "hasUnreadReply" se houver novas mensagens
         if (stData.isReady) {
-            fetchContacts(url); // Recarrega DB completo pois servidor pode ter alterado dados
+            fetchContacts(url);
         }
     } catch (e) { setServerStatus(false); }
   };
@@ -360,12 +362,22 @@ const App: React.FC = () => {
                 <table className="w-full text-left">
                     <thead className="bg-gray-50 text-xs uppercase text-gray-500"><tr><th className="p-4">Auto</th><th className="p-4">Nome</th><th className="p-4">Status</th><th className="p-4 text-right">Ações</th></tr></thead>
                     <tbody className="divide-y text-sm">
-                        {filtered.map(c => (
+                        {filtered.map(c => {
+                             // Calcula dias em espera visualmente
+                             const lastDate = new Date(c.lastContactDate || Date.now());
+                             const daysWait = Math.ceil((Date.now() - lastDate.getTime())/(1000*60*60*24));
+                             
+                             return (
                             <React.Fragment key={c.id}>
                                 <tr className={`hover:bg-gray-50 ${c.hasUnreadReply ? 'bg-yellow-50' : ''}`}>
                                     <td className="p-4"><button onClick={() => handleSaveContact({...c, autoPilotEnabled: !c.autoPilotEnabled})} title={c.autoPilotEnabled!==false?"Pausar":"Ativar"} className={`w-8 h-8 rounded-full flex items-center justify-center ${c.autoPilotEnabled!==false?'bg-green-100 text-green-600':'bg-gray-100 text-gray-400'}`}>{c.autoPilotEnabled!==false?<Icons.Pause/>:<Icons.Play/>}</button></td>
-                                    <td className="p-4 font-bold">{c.name}<div className="text-xs font-normal text-gray-500">{c.type}</div>{c.hasUnreadReply && <div className="text-xs text-yellow-600">🔔 Nova Msg</div>}</td>
-                                    <td className="p-4">{c.automationStage === AutomationStage.IDLE ? 'Pendente' : 'Aguardando'}</td>
+                                    <td className="p-4 font-bold">{c.name}<div className="text-xs font-normal text-gray-500">{c.type}</div>{c.hasUnreadReply && <div className="text-xs text-yellow-600 font-bold animate-pulse">🔔 Nova Mensagem</div>}</td>
+                                    <td className="p-4">
+                                        {c.automationStage === AutomationStage.IDLE 
+                                            ? <span className="text-gray-500">Pendente ({daysWait}d)</span> 
+                                            : <span className="text-blue-600 font-bold">Aguardando ({daysWait}d)</span>
+                                        }
+                                    </td>
                                     <td className="p-4 text-right flex justify-end gap-2">
                                         <button onClick={() => handleForceTest(c)} className="p-2 bg-yellow-50 text-yellow-600 rounded" title="⚡ TESTE: Forçar Vencimento Agora"><Icons.Flash /></button>
                                         <button onClick={() => setChatContact(c)} className="p-2 bg-green-50 text-green-600 rounded" title="Abrir Chat Ao Vivo"><Icons.WhatsApp /></button>
@@ -378,7 +390,7 @@ const App: React.FC = () => {
                                     <tr className="bg-blue-50/50"><td colSpan={4} className="p-4"><div className="bg-white border p-4 rounded shadow-sm max-w-2xl mx-auto"><textarea className="w-full border rounded p-2 mb-2" rows={3} value={genMsg} onChange={e => setGenMsg(e.target.value)} /><div className="flex justify-end gap-2"><button onClick={() => setSelectedId(null)} className="px-3 py-1 bg-gray-200 rounded">Cancelar</button><button onClick={() => sendManual(c)} disabled={sending} className="px-3 py-1 bg-blue-600 text-white rounded font-bold">Enviar</button></div></div></td></tr>
                                 )}
                             </React.Fragment>
-                        ))}
+                        );})}
                     </tbody>
                 </table>
             </div>
@@ -398,7 +410,7 @@ const App: React.FC = () => {
                             {unread.map(c => (
                                 <div key={c.id} className="border p-3 bg-yellow-50 rounded-lg">
                                     <div className="font-bold">{c.name}</div>
-                                    <div className="text-sm my-2 italic text-gray-700">"Nova mensagem."</div>
+                                    <div className="text-sm my-2 italic text-gray-700">"{c.lastReplyContent || 'Nova mensagem'}"</div>
                                     <div className="flex gap-2">
                                         <button onClick={() => setChatContact(c)} className="flex-1 bg-green-600 text-white py-1 rounded text-xs font-bold" title="Abrir conversa">Chat</button>
                                         <button onClick={() => { setIsInboxOpen(false); handleKeepContact(c); }} className="flex-1 bg-blue-600 text-white py-1 rounded text-xs font-bold" title="Processar atualização">Atualizar</button>
