@@ -299,7 +299,8 @@ app.get('/whatsapp-contacts', async (req, res) => {
             .filter(c => !c.isGroup)
             .map(c => ({
                 name: c.name || c.id.user,
-                phone: c.id.user
+                phone: c.id.user,
+                timestamp: c.timestamp // Captura a data da última mensagem (segundos)
             }));
 
         // Remove duplicatas

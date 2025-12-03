@@ -12,7 +12,7 @@ const generateId = () => typeof crypto !== 'undefined' && crypto.randomUUID ? cr
 
 // --- COMPONENTE INTERNO: MODAL IMPORTAÇÃO ---
 const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: string, existingContacts: Contact[], onImport: (newContacts: Contact[]) => void, settings: AppSettings }> = ({ isOpen, onClose, serverUrl, existingContacts, onImport, settings }) => {
-    const [waContacts, setWaContacts] = useState<{name: string, phone: string}[]>([]);
+    const [waContacts, setWaContacts] = useState<{name: string, phone: string, timestamp?: number}[]>([]);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
@@ -20,6 +20,8 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
 
     useEffect(() => {
         if (isOpen) {
+            // Limpa a seleção anterior ao abrir
+            setSelected(new Set());
             setLoading(true);
             fetch(`${serverUrl}/whatsapp-contacts`, { headers: {'ngrok-skip-browser-warning': 'true'} })
                 .then(res => res.json())
@@ -54,7 +56,10 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
             phone: c.phone.startsWith('55') ? c.phone : '55' + c.phone,
             type: targetType,
             notes: 'Importado do WhatsApp',
-            lastContactDate: new Date().toISOString().split('T')[0],
+            // Se tiver timestamp do WhatsApp, usa. Se não, usa hoje.
+            lastContactDate: c.timestamp 
+                ? new Date(c.timestamp * 1000).toISOString().split('T')[0] 
+                : new Date().toISOString().split('T')[0],
             followUpFrequencyDays: freq,
             automationStage: AutomationStage.IDLE,
             autoPilotEnabled: true,
@@ -100,7 +105,10 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
                                     <input type="checkbox" checked={selected.has(c.phone)} readOnly className="mr-3 h-4 w-4" />
                                     <div>
                                         <div className="font-bold text-sm">{c.name}</div>
-                                        <div className="text-xs text-gray-500">{c.phone}</div>
+                                        <div className="text-xs text-gray-500 flex gap-2">
+                                            <span>{c.phone}</span>
+                                            {c.timestamp && <span className="text-gray-400">• Última msg: {new Date(c.timestamp * 1000).toLocaleDateString()}</span>}
+                                        </div>
                                     </div>
                                 </div>
                             ))}
