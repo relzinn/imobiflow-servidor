@@ -337,9 +337,7 @@ const App: React.FC = () => {
   
   const handleLogoutSystem = () => { setAuthToken(''); localStorage.removeItem('imobiflow_auth'); setViewState('login'); };
   const toggleAutomation = () => fetch(`${settings!.serverUrl}/toggle-automation`,{method:'POST',headers:getHeaders(),body:JSON.stringify({active:!settings!.automationActive})}).then(()=>setSettings({...settings!,automationActive:!settings!.automationActive}));
-  const handleGoodbye = async (c: Contact, sendMsg: boolean) => { await fetch(`${settings!.serverUrl}/goodbye`, {method:'POST', headers:getHeaders(), body:JSON.stringify({contactId: c.id, sendMsg})}); fetchContacts(); setConfirmData({show:false}); };
   const handleResetStage = async (c: Contact) => { const updated = { ...c, automationStage: AutomationStage.IDLE, lastContactDate: new Date().toISOString() }; await persistContacts(contacts.map(x=>x.id===c.id?updated:x)); setToast({msg: 'Ciclo reiniciado!', type: 'success'}); };
-  const handleDelete = (id:string) => setConfirmData({show:true, msg:'Excluir contato?', action:()=>persistContacts(contacts.filter(c=>c.id!==id))});
   const handleForceTest = async (c: Contact) => { const past = new Date(); past.setDate(past.getDate()- (c.followUpFrequencyDays + 2)); const updated = { ...c, lastContactDate: past.toISOString().split('T')[0], automationStage: AutomationStage.IDLE }; await persistContacts(contacts.map(x=>x.id===c.id?updated:x)); fetch(`${settings!.serverUrl}/trigger-automation`,{headers:getHeaders()}); setToast({msg:'Teste disparado (Ciclo Resetado)', type:'success'}); };
   const handleDisconnectWhatsapp = async () => { try { await fetch(`${settings!.serverUrl}/logout`, { method: 'POST', headers: getHeaders() }); setServerStatus(false); setToast({msg: 'Desconectado do WhatsApp!', type: 'success'}); } catch (e) { setToast({msg: 'Erro ao desconectar', type: 'error'}); } };
   const sendManual = async (c: Contact) => { if (!genMsg.trim()) return; setSending(true); try { await fetch(`${settings!.serverUrl}/send`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ phone: c.phone, message: genMsg }) }); setToast({ msg: 'Enviado!', type: 'success' }); const updated = { ...c, lastContactDate: new Date().toISOString().split('T')[0], automationStage: AutomationStage.IDLE }; await persistContacts(contacts.map(x => x.id === c.id ? updated : x)); setSelectedId(null); setGenMsg(''); } catch (e) { setToast({ msg: 'Erro ao enviar', type: 'error' }); } finally { setSending(false); } };
@@ -347,6 +345,30 @@ const App: React.FC = () => {
   const handleImportContacts = async (newContacts: Contact[]) => { const uniqueNew = newContacts.filter(nc => !contacts.some(oc => oc.phone === nc.phone)); await persistContacts([...contacts, ...uniqueNew]); setToast({ msg: `${uniqueNew.length} importados`, type: 'success' }); };
   const handleUpdateContact = (c: Contact) => { setEditingContact(c); setIsModalOpen(true); };
   const handleFinalizeContact = async (c: Contact) => { await persistContacts(contacts.filter(x => x.id !== c.id)); setToast({ msg: 'Contato finalizado', type: 'success' }); };
+  
+  // --- DELETE FIX & DUPLICATE VALIDATION ---
+
+  const handleDelete = async (id:string) => {
+     // Exclusão direta, sem criar conflito com o modal
+     await persistContacts(contacts.filter(c => c.id !== id));
+     setToast({msg: 'Contato excluído', type: 'success'});
+  };
+
+  const handleValidateContact = (contact: Contact): string | null => {
+      // Normaliza para verificar apenas os últimos 8 dígitos (evita problemas com 55 ou DDD)
+      const cleanNew = contact.phone.replace(/\D/g, '').slice(-8);
+      
+      const duplicate = contacts.find(c => {
+          if (c.id === contact.id) return false; // Não compara com ele mesmo na edição
+          const cleanExisting = c.phone.replace(/\D/g, '').slice(-8);
+          return cleanExisting === cleanNew;
+      });
+
+      if (duplicate) {
+          return `Este número já pertence a ${duplicate.name}`;
+      }
+      return null;
+  };
 
   useEffect(() => { if(toast) setTimeout(()=>setToast(null),3000); }, [toast]);
   useEffect(() => { if(viewState==='dashboard' && settings) { const i=setInterval(()=>{ fetch(`${settings.serverUrl}/status`,{headers:getHeaders()}).then(r=>r.json()).then(d=>setServerStatus(d.isReady)).catch(()=>setServerStatus(false)); fetchContacts(); setLastSync(new Date().toLocaleTimeString()); },5000); return ()=>clearInterval(i); } }, [viewState, settings]);
@@ -568,7 +590,19 @@ const App: React.FC = () => {
                                                     <button onClick={() => { handleUpdateContact(c); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-2"><Icons.Pencil /> Editar</button>
                                                     <button onClick={() => { handleForceTest(c); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-2"><Icons.Refresh /> Resetar Ciclo</button>
                                                     <div className="h-px bg-slate-100 my-1" />
-                                                    <button onClick={() => { setConfirmData({show:true, msg:'Excluir contato permanentemente?', action:()=>handleDelete(c.id)}); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600 font-medium flex items-center gap-2"><Icons.Trash /> Excluir</button>
+                                                    <button 
+                                                        onClick={() => { 
+                                                            setConfirmData({
+                                                                show: true, 
+                                                                msg: 'Excluir contato permanentemente?', 
+                                                                action: () => handleDelete(c.id) // AGORA CHAMA A FUNÇÃO CORRETA
+                                                            }); 
+                                                            setOpenMenuId(null); 
+                                                        }} 
+                                                        className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600 font-medium flex items-center gap-2"
+                                                    >
+                                                        <Icons.Trash /> Excluir
+                                                    </button>
                                                 </div>
                                             )}
                                         </div>
@@ -592,7 +626,15 @@ const App: React.FC = () => {
             )}
 
             {/* MODALS */}
-            <ContactModal isOpen={isModalOpen} onClose={()=>setIsModalOpen(false)} onSave={handleSaveContact} initialContact={editingContact} settings={settings} defaultType={filterType!=='ALL'?(filterType as ContactType):ContactType.CLIENT}/>
+            <ContactModal 
+                isOpen={isModalOpen} 
+                onClose={()=>setIsModalOpen(false)} 
+                onSave={handleSaveContact} 
+                onValidate={handleValidateContact} // PASSA VALIDAÇÃO
+                initialContact={editingContact} 
+                settings={settings} 
+                defaultType={filterType!=='ALL'?(filterType as ContactType):ContactType.CLIENT}
+            />
             <ImportModal isOpen={isImportOpen} onClose={()=>setIsImportOpen(false)} serverUrl={settings?.serverUrl||''} existingContacts={contacts} onImport={handleImportContacts} settings={settings!} apiHeaders={getHeaders()}/>
             <QRCodeModal isOpen={isQRCodeOpen} onClose={()=>setIsQRCodeOpen(false)} onConnected={()=>{setServerStatus(true);setIsQRCodeOpen(false)}} serverUrl={settings?.serverUrl} onUrlChange={u=>persistSettings({...settings!,serverUrl:u})}/>
             <SettingsModal isOpen={isSettingsOpen} onClose={()=>setIsSettingsOpen(false)} settings={settings!} onSave={persistSettings}/>

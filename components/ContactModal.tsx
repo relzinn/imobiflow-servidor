@@ -6,12 +6,13 @@ interface ContactModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (contact: Contact) => void;
+  onValidate?: (contact: Contact) => string | null; // Nova prop para validar duplicidade
   initialContact?: Contact | null;
   settings: AppSettings | null;
   defaultType?: ContactType;
 }
 
-export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onSave, initialContact, settings, defaultType }) => {
+export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onSave, onValidate, initialContact, settings, defaultType }) => {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
   const [type, setType] = useState<ContactType>(ContactType.CLIENT);
@@ -19,7 +20,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
   const [lastContactDate, setLastContactDate] = useState('');
   const [frequencyDays, setFrequencyDays] = useState<number>(30);
   const [phoneError, setPhoneError] = useState('');
-  const [messageTone, setMessageTone] = useState<string>(''); // Vazio = Padrão
+  const [messageTone, setMessageTone] = useState<string>(''); 
 
   useEffect(() => {
     if (initialContact) {
@@ -67,7 +68,8 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
         return;
     }
 
-    onSave({
+    // Objeto temporário para validação
+    const tempContact: Contact = {
       id: initialContact ? initialContact.id : (typeof crypto !== 'undefined' ? crypto.randomUUID() : Date.now().toString()),
       name,
       phone: formattedPhone,
@@ -75,12 +77,23 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       notes,
       lastContactDate,
       followUpFrequencyDays: frequencyDays,
-      messageTone: messageTone || undefined, // Se vazio, não salva
+      messageTone: messageTone || undefined,
       automationStage: initialContact?.automationStage ?? AutomationStage.IDLE,
       autoPilotEnabled: initialContact?.autoPilotEnabled ?? true,
       lastReplyTimestamp: initialContact?.lastReplyTimestamp,
-      hasUnreadReply: false // FORÇAR LIMPEZA DA NOTIFICAÇÃO AO SALVAR
-    });
+      hasUnreadReply: false
+    };
+
+    // Validação Externa (Duplicidade)
+    if (onValidate) {
+        const errorMsg = onValidate(tempContact);
+        if (errorMsg) {
+            setPhoneError(errorMsg);
+            return;
+        }
+    }
+
+    onSave(tempContact);
     onClose();
   };
 
@@ -103,15 +116,15 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
             <input 
                 required 
                 placeholder="5511999999999" 
-                className={`w-full border rounded p-2 ${phoneError ? 'border-red-500 bg-red-50' : ''}`}
+                className={`w-full border rounded p-2 ${phoneError ? 'border-red-500 bg-red-50 text-red-700' : ''}`}
                 value={phone} 
                 onChange={e => {
                     setPhone(e.target.value.replace(/\D/g, ''));
                     setPhoneError('');
                 }} 
             />
-            {phoneError && <p className="text-xs text-red-500 mt-1">{phoneError}</p>}
-            <p className="text-[10px] text-gray-400 mt-1">O sistema adicionará '55' automaticamente se você esquecer.</p>
+            {phoneError && <p className="text-xs text-red-600 font-bold mt-1 bg-red-50 p-1 rounded border border-red-100">{phoneError}</p>}
+            {!phoneError && <p className="text-[10px] text-gray-400 mt-1">O sistema adicionará '55' automaticamente se você esquecer.</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
