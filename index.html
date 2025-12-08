@@ -22,8 +22,13 @@
   }
 }
 </script>
+<!-- Adicionando Babel para processar JSX/TSX no navegador -->
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
   <body>
     <div id="root"></div>
+    
+    <!-- Carregando a aplicação com Babel e type=module -->
+    <script type="text/babel" data-type="module" src="/index.tsx"></script>
   </body>
 </html>

@@ -31,6 +31,28 @@ const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
+// --- MIDDLEWARE PARA SERVIR ARQUIVOS TSX/TS SEM BUILD ---
+// Permite que o navegador solicite './App' e o servidor entregue './App.tsx'
+app.use((req, res, next) => {
+    // Ignora API e raiz
+    if (req.path === '/' || req.path.startsWith('/qr') || req.path.startsWith('/status')) return next();
+    
+    // Se a requisição não tem extensão, tenta encontrar o arquivo .tsx ou .ts correspondente
+    if (!req.path.includes('.')) {
+        const potentialExtensions = ['.tsx', '.ts', '.js'];
+        for (const ext of potentialExtensions) {
+            const fullPath = path.join(__dirname, req.path + ext);
+            if (fs.existsSync(fullPath)) {
+                return res.sendFile(fullPath);
+            }
+        }
+    }
+    next();
+});
+
+// Serve os arquivos estáticos (HTML, CSS, JS, Imagens) da pasta raiz
+app.use(express.static(__dirname));
+
 console.log(`🔧 Configurando servidor na porta ${PORT}...`);
 
 // --- IA CENTRALIZADA ---
@@ -155,6 +177,7 @@ function saveSettings(s) { try { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(
 let qrCodeData = null;
 let clientStatus = 'initializing';
 let isReady = false;
+let lastQrCode = ''; // Para evitar spam no log
 
 console.log("📲 Iniciando cliente WhatsApp...");
 const client = new Client({
@@ -175,7 +198,11 @@ const client = new Client({
 });
 
 client.on('qr', (qr) => { 
-    console.log("🔹 QR Code recebido");
+    // Evita spam de logs se o QR for o mesmo
+    if (qr === lastQrCode) return;
+    lastQrCode = qr;
+
+    console.log("🔹 Novo QR Code gerado (escaneie para conectar):");
     qrcodeTerminal.generate(qr, { small: true }); 
     qrcode.toDataURL(qr, (err, url) => { 
         if (!err) { 
