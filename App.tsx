@@ -9,6 +9,19 @@ import { generateFollowUpMessage } from './services/geminiService';
 
 const generateId = () => typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random()}`;
 
+// --- HELPERS ---
+const getInitials = (name: string) => {
+  const parts = name.trim().split(' ');
+  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+};
+
+const getColorFromInitial = (char: string) => {
+    const colors = ['bg-red-100 text-red-700', 'bg-blue-100 text-blue-700', 'bg-green-100 text-green-700', 'bg-purple-100 text-purple-700', 'bg-yellow-100 text-yellow-700', 'bg-indigo-100 text-indigo-700', 'bg-pink-100 text-pink-700', 'bg-teal-100 text-teal-700'];
+    const index = char.charCodeAt(0) % colors.length;
+    return colors[index];
+};
+
 // --- COMPONENTS ---
 
 const LoginScreen: React.FC<{ onLogin: (pass: string) => void, error: string }> = ({ onLogin, error }) => {
@@ -52,8 +65,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
     const [reviewNotes, setReviewNotes] = useState('');
     const [reviewType, setReviewType] = useState<ContactType>(ContactType.CLIENT);
     const [reviewTone, setReviewTone] = useState('');
-
-    // Opções completas de tom de voz para manter consistência com o ContactModal
+    
     const toneOptions = ['Casual', 'Formal', 'Persuasivo', 'Amigável', 'Consultivo', 'Urgente', 'Entusiasta', 'Elegante'];
 
     useEffect(() => {
@@ -254,6 +266,7 @@ const App: React.FC = () => {
   const [chatContact, setChatContact] = useState<Contact|null>(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [filterType, setFilterType] = useState<string>('ALL');
+  const [searchTerm, setSearchTerm] = useState('');
   const [toast, setToast] = useState<any>(null);
   const [serverStatus, setServerStatus] = useState(false);
   const [lastSync, setLastSync] = useState('-');
@@ -261,98 +274,56 @@ const App: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string|null>(null);
   const [confirmData, setConfirmData] = useState<any>({show:false});
   const [sending, setSending] = useState(false);
+  
+  // Controle do menu dropdown (kebab) por ID do contato
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const getServerUrl = () => (localStorage.getItem('imobiflow_server_url') || 'https://followimob.squareweb.app').replace(/\/$/, '');
-  
-  // Headers Helper: Agora inclui automaticamente o token de autenticação
   const getHeaders = () => ({ 
       'Content-Type': 'application/json', 
       'ngrok-skip-browser-warning': 'true',
       'x-access-token': authToken
   });
 
-  // 1. Initial Load: Check if system is configured
   useEffect(() => {
       setViewState('loading');
       fetch(`${getServerUrl()}/auth-status`, { headers: { 'ngrok-skip-browser-warning': 'true' } })
         .then(r => r.json())
         .then(data => {
-            if (!data.configured) {
-                setViewState('wizard');
-            } else {
-                // Configurado, verifica se temos token salvo
+            if (!data.configured) setViewState('wizard');
+            else {
                 if (authToken) {
-                   // Tenta pegar settings com o token
                    fetch(`${getServerUrl()}/settings`, { headers: getHeaders() })
-                      .then(r => {
-                          if (r.ok) return r.json();
-                          throw new Error('Unauthorized');
-                      })
-                      .then(d => {
-                          setSettings({...d, serverUrl: getServerUrl()});
-                          setViewState('dashboard');
-                          fetchContacts();
-                      })
-                      .catch(() => {
-                          // Token inválido ou expirado
-                          setAuthToken('');
-                          localStorage.removeItem('imobiflow_auth');
-                          setViewState('login');
-                      });
-                } else {
-                    setViewState('login');
-                }
+                      .then(r => { if(r.ok) return r.json(); throw new Error('Unauthorized'); })
+                      .then(d => { setSettings({...d, serverUrl: getServerUrl()}); setViewState('dashboard'); fetchContacts(); })
+                      .catch(() => { setAuthToken(''); localStorage.removeItem('imobiflow_auth'); setViewState('login'); });
+                } else setViewState('login');
             }
         })
-        .catch(() => {
-            // Se falhar a conexão, assume wizard ou erro, mas vamos para wizard por segurança de fluxo
-            setViewState('wizard');
-        });
+        .catch(() => setViewState('wizard'));
   }, []);
 
   const handleLoginSubmit = async (password: string) => {
       setLoginError('');
       try {
-          const res = await fetch(`${getServerUrl()}/login`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-              body: JSON.stringify({ password })
-          });
+          const res = await fetch(`${getServerUrl()}/login`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' }, body: JSON.stringify({ password }) });
           const data = await res.json();
           if (data.success) {
-              const token = password; // Neste modelo simples, a senha é o token
+              const token = password;
               setAuthToken(token);
               localStorage.setItem('imobiflow_auth', token);
-              
-              // Carregar dados
-              const settingsRes = await fetch(`${getServerUrl()}/settings`, { 
-                  headers: { ...getHeaders(), 'x-access-token': token } 
-              });
-              const settingsData = await settingsRes.json();
-              setSettings({ ...settingsData, serverUrl: getServerUrl() });
-              
+              const settingsRes = await fetch(`${getServerUrl()}/settings`, { headers: { ...getHeaders(), 'x-access-token': token } });
+              setSettings({ ...(await settingsRes.json()), serverUrl: getServerUrl() });
               setViewState('dashboard');
-              // Recarrega página para limpar estados sujos se necessário ou só prossegue
-          } else {
-              setLoginError('Senha incorreta.');
-          }
-      } catch (e) {
-          setLoginError('Erro de conexão com servidor.');
-      }
+          } else setLoginError('Senha incorreta.');
+      } catch (e) { setLoginError('Erro de conexão com servidor.'); }
   };
 
   const handleWizardComplete = (s: AppSettings) => {
-      // Salva configurações iniciais (incluindo senha)
-      fetch(`${s.serverUrl}/settings`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
-          body: JSON.stringify(s)
-      }).then(res => res.json()).then(data => {
+      fetch(`${s.serverUrl}/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' }, body: JSON.stringify(s) }).then(res => res.json()).then(data => {
           if (data.success) {
-              // Login automático após setup
-              const token = s.password || '';
-              setAuthToken(token);
-              localStorage.setItem('imobiflow_auth', token);
+              setAuthToken(s.password || '');
+              localStorage.setItem('imobiflow_auth', s.password || '');
               persistSettings(s);
               setViewState('dashboard');
               fetchContacts();
@@ -360,237 +331,291 @@ const App: React.FC = () => {
       });
   };
 
-  const persistSettings = (s:AppSettings) => { 
-      setSettings(s); 
-      localStorage.setItem('imobiflow_server_url',s.serverUrl!); 
-      fetch(`${s.serverUrl}/settings`,{method:'POST',headers:getHeaders(),body:JSON.stringify(s)}); 
-  };
-
+  const persistSettings = (s:AppSettings) => { setSettings(s); localStorage.setItem('imobiflow_server_url',s.serverUrl!); fetch(`${s.serverUrl}/settings`,{method:'POST',headers:getHeaders(),body:JSON.stringify(s)}); };
   const fetchContacts = () => fetch(`${settings!.serverUrl}/contacts`,{headers:getHeaders()}).then(r=>r.json()).then(setContacts).catch(()=>{});
   const persistContacts = async (list:Contact[]) => { setContacts(list); await fetch(`${settings!.serverUrl}/contacts`,{method:'POST',headers:getHeaders(),body:JSON.stringify(list)}); };
   
-  const handleLogoutSystem = () => {
-      setAuthToken('');
-      localStorage.removeItem('imobiflow_auth');
-      setViewState('login');
-  };
+  const handleLogoutSystem = () => { setAuthToken(''); localStorage.removeItem('imobiflow_auth'); setViewState('login'); };
+  const toggleAutomation = () => fetch(`${settings!.serverUrl}/toggle-automation`,{method:'POST',headers:getHeaders(),body:JSON.stringify({active:!settings!.automationActive})}).then(()=>setSettings({...settings!,automationActive:!settings!.automationActive}));
+  const handleGoodbye = async (c: Contact, sendMsg: boolean) => { await fetch(`${settings!.serverUrl}/goodbye`, {method:'POST', headers:getHeaders(), body:JSON.stringify({contactId: c.id, sendMsg})}); fetchContacts(); setConfirmData({show:false}); };
+  const handleResetStage = async (c: Contact) => { const updated = { ...c, automationStage: AutomationStage.IDLE, lastContactDate: new Date().toISOString() }; await persistContacts(contacts.map(x=>x.id===c.id?updated:x)); setToast({msg: 'Ciclo reiniciado!', type: 'success'}); };
+  const handleDelete = (id:string) => setConfirmData({show:true, msg:'Excluir contato?', action:()=>persistContacts(contacts.filter(c=>c.id!==id))});
+  const handleForceTest = async (c: Contact) => { const past = new Date(); past.setDate(past.getDate()- (c.followUpFrequencyDays + 2)); const updated = { ...c, lastContactDate: past.toISOString().split('T')[0], automationStage: AutomationStage.IDLE }; await persistContacts(contacts.map(x=>x.id===c.id?updated:x)); fetch(`${settings!.serverUrl}/trigger-automation`,{headers:getHeaders()}); setToast({msg:'Teste disparado (Ciclo Resetado)', type:'success'}); };
+  const handleDisconnectWhatsapp = async () => { try { await fetch(`${settings!.serverUrl}/logout`, { method: 'POST', headers: getHeaders() }); setServerStatus(false); setToast({msg: 'Desconectado do WhatsApp!', type: 'success'}); } catch (e) { setToast({msg: 'Erro ao desconectar', type: 'error'}); } };
+  const sendManual = async (c: Contact) => { if (!genMsg.trim()) return; setSending(true); try { await fetch(`${settings!.serverUrl}/send`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ phone: c.phone, message: genMsg }) }); setToast({ msg: 'Enviado!', type: 'success' }); const updated = { ...c, lastContactDate: new Date().toISOString().split('T')[0], automationStage: AutomationStage.IDLE }; await persistContacts(contacts.map(x => x.id === c.id ? updated : x)); setSelectedId(null); setGenMsg(''); } catch (e) { setToast({ msg: 'Erro ao enviar', type: 'error' }); } finally { setSending(false); } };
+  const handleSaveContact = async (contact: Contact) => { let newList; const exists = contacts.find(c => c.id === contact.id); if (exists) newList = contacts.map(c => c.id === contact.id ? contact : c); else newList = [...contacts, contact]; await persistContacts(newList); };
+  const handleImportContacts = async (newContacts: Contact[]) => { const uniqueNew = newContacts.filter(nc => !contacts.some(oc => oc.phone === nc.phone)); await persistContacts([...contacts, ...uniqueNew]); setToast({ msg: `${uniqueNew.length} importados`, type: 'success' }); };
+  const handleUpdateContact = (c: Contact) => { setEditingContact(c); setIsModalOpen(true); };
+  const handleFinalizeContact = async (c: Contact) => { await persistContacts(contacts.filter(x => x.id !== c.id)); setToast({ msg: 'Contato finalizado', type: 'success' }); };
 
   useEffect(() => { if(toast) setTimeout(()=>setToast(null),3000); }, [toast]);
-  useEffect(() => { if(viewState==='dashboard' && settings) { const i=setInterval(()=>{
-      fetch(`${settings.serverUrl}/status`,{headers:getHeaders()}).then(r=>r.json()).then(d=>setServerStatus(d.isReady)).catch(()=>setServerStatus(false));
-      fetchContacts(); setLastSync(new Date().toLocaleTimeString());
-  },5000); return ()=>clearInterval(i); } }, [viewState, settings]);
+  useEffect(() => { if(viewState==='dashboard' && settings) { const i=setInterval(()=>{ fetch(`${settings.serverUrl}/status`,{headers:getHeaders()}).then(r=>r.json()).then(d=>setServerStatus(d.isReady)).catch(()=>setServerStatus(false)); fetchContacts(); setLastSync(new Date().toLocaleTimeString()); },5000); return ()=>clearInterval(i); } }, [viewState, settings]);
 
-  const toggleAutomation = () => fetch(`${settings!.serverUrl}/toggle-automation`,{method:'POST',headers:getHeaders(),body:JSON.stringify({active:!settings!.automationActive})}).then(()=>setSettings({...settings!,automationActive:!settings!.automationActive}));
-
-  const handleGoodbye = async (c: Contact, sendMsg: boolean) => {
-      await fetch(`${settings!.serverUrl}/goodbye`, {method:'POST', headers:getHeaders(), body:JSON.stringify({contactId: c.id, sendMsg})});
-      fetchContacts();
-      setConfirmData({show:false});
-  };
-
-  const handleResetStage = async (c: Contact) => {
-      const updated = { ...c, automationStage: AutomationStage.IDLE, lastContactDate: new Date().toISOString() };
-      const newList = contacts.map(x=>x.id===c.id?updated:x);
-      await persistContacts(newList);
-      setToast({msg: 'Ciclo reiniciado!', type: 'success'});
-  };
-
-  const handleDelete = (id:string) => setConfirmData({show:true, msg:'Excluir contato?', action:()=>persistContacts(contacts.filter(c=>c.id!==id))});
-  
-  const handleForceTest = async (c: Contact) => {
-      const past = new Date(); past.setDate(past.getDate()- (c.followUpFrequencyDays + 2));
-      const updated = { ...c, lastContactDate: past.toISOString().split('T')[0], automationStage: AutomationStage.IDLE };
-      await persistContacts(contacts.map(x=>x.id===c.id?updated:x));
-      fetch(`${settings!.serverUrl}/trigger-automation`,{headers:getHeaders()});
-      setToast({msg:'Teste disparado (Ciclo Resetado)', type:'success'});
-  };
-
-  const handleCloseChat = () => {
-      setChatContact(null);
-      if (contacts.some(c => c.hasUnreadReply)) setIsInboxOpen(true);
-  };
-
-  const handleDisconnectWhatsapp = async () => {
-    try {
-        await fetch(`${settings!.serverUrl}/logout`, { method: 'POST', headers: getHeaders() });
-        setServerStatus(false);
-        setToast({msg: 'Desconectado do WhatsApp!', type: 'success'});
-    } catch (e) {
-        setToast({msg: 'Erro ao desconectar', type: 'error'});
-    }
-  };
-
-  const sendManual = async (c: Contact) => {
-    if (!genMsg.trim()) return;
-    setSending(true);
-    try {
-        await fetch(`${settings!.serverUrl}/send`, {
-            method: 'POST',
-            headers: getHeaders(),
-            body: JSON.stringify({ phone: c.phone, message: genMsg })
-        });
-        setToast({ msg: 'Enviado!', type: 'success' });
-        const updated = { ...c, lastContactDate: new Date().toISOString().split('T')[0], automationStage: AutomationStage.IDLE };
-        await persistContacts(contacts.map(x => x.id === c.id ? updated : x));
-        setSelectedId(null);
-        setGenMsg('');
-    } catch (e) {
-        setToast({ msg: 'Erro ao enviar', type: 'error' });
-    } finally {
-        setSending(false);
-    }
-  };
-
-  const handleSaveContact = async (contact: Contact) => {
-    let newList;
-    const exists = contacts.find(c => c.id === contact.id);
-    if (exists) {
-        newList = contacts.map(c => c.id === contact.id ? contact : c);
-    } else {
-        newList = [...contacts, contact];
-    }
-    await persistContacts(newList);
-  };
-
-  const handleImportContacts = async (newContacts: Contact[]) => {
-    const uniqueNew = newContacts.filter(nc => !contacts.some(oc => oc.phone === nc.phone));
-    const newList = [...contacts, ...uniqueNew];
-    await persistContacts(newList);
-    setToast({ msg: `${uniqueNew.length} importados`, type: 'success' });
-  };
-
-  const handleUpdateContact = (c: Contact) => {
-      setEditingContact(c);
-      setIsModalOpen(true);
-  };
-
-  const handleFinalizeContact = async (c: Contact) => {
-    const newList = contacts.filter(x => x.id !== c.id);
-    await persistContacts(newList);
-    setToast({ msg: 'Contato finalizado', type: 'success' });
-  };
-
-  // --- RENDER ---
+  // Click outside listener for kebab menu
+  useEffect(() => {
+    const handleClickOutside = () => setOpenMenuId(null);
+    if(openMenuId) window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, [openMenuId]);
 
   if(viewState==='loading') return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white"><div className="animate-pulse">Carregando ImobiFlow...</div></div>;
   if(viewState==='wizard') return <StrategyWizard onComplete={handleWizardComplete}/>;
   if(viewState==='login') return <LoginScreen onLogin={handleLoginSubmit} error={loginError} />;
 
-  const filtered = contacts.filter(c=>filterType==='ALL'||c.type===filterType);
+  // --- FILTRAGEM ---
+  const filtered = contacts.filter(c => {
+    const matchesFilter = filterType === 'ALL' || c.type === filterType;
+    const matchesSearch = searchTerm === '' || 
+        c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        c.phone.includes(searchTerm);
+    return matchesFilter && matchesSearch;
+  });
+  
   const unread = contacts.filter(c=>c.hasUnreadReply);
 
   return (
-    <div className="flex flex-col md:flex-row min-h-screen bg-gray-100 font-sans text-gray-800">
-        <aside className="bg-slate-900 text-white w-full md:w-64 p-6 flex flex-col shrink-0">
-            <h1 className="text-xl font-bold mb-8">ImobiFlow</h1>
-            <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-4">
-                <div className="text-xs font-bold text-slate-500 uppercase mb-2">Status do Servidor</div>
-                <div className="flex justify-between items-center mb-2"><span>WhatsApp</span>{serverStatus?<span className="text-green-400 text-xs">● Online</span>:<button onClick={()=>setIsQRCodeOpen(true)} className="text-red-400 text-xs">● Conectar</button>}</div>
-                {serverStatus && <button onClick={handleDisconnectWhatsapp} className="w-full text-xs bg-red-900/50 text-red-200 border border-red-900 rounded py-1 hover:bg-red-900">Desconectar WPP</button>}
+    <div className="flex flex-col md:flex-row min-h-screen bg-[#F8F9FA] font-sans text-slate-800">
+        
+        {/* SIDEBAR MODERNA */}
+        <aside className="bg-[#0F172A] text-slate-400 w-full md:w-64 flex flex-col shrink-0 transition-all">
+            <div className="p-6">
+                <div className="flex items-center gap-3 mb-8">
+                    <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white shadow-lg shadow-blue-900/50">
+                        <Icons.Flash />
+                    </div>
+                    <span className="text-xl font-bold text-white tracking-tight">ImobiFlow</span>
+                </div>
+
+                {/* Status Widget Compacto */}
+                <div className="bg-[#1E293B] rounded-xl p-3 border border-slate-700/50 shadow-sm mb-6 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                        <div className={`w-2.5 h-2.5 rounded-full ${serverStatus ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'} transition-all`} />
+                        <span className={`text-xs font-bold ${serverStatus ? 'text-slate-200' : 'text-slate-400'}`}>
+                            {serverStatus ? 'WhatsApp Online' : 'Desconectado'}
+                        </span>
+                    </div>
+                    {!serverStatus && <button onClick={() => setIsQRCodeOpen(true)} className="text-[10px] bg-blue-600 text-white px-2 py-1 rounded hover:bg-blue-500 transition-colors">Conectar</button>}
+                    {serverStatus && <button onClick={handleDisconnectWhatsapp} className="text-slate-500 hover:text-red-400"><Icons.Pause/></button>}
+                </div>
+
+                {/* Automação Toggle */}
+                <div className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-800/50 transition-colors mb-6 cursor-pointer" onClick={toggleAutomation}>
+                    <span className="text-sm font-medium text-slate-300">Automação IA</span>
+                    <div className={`w-9 h-5 rounded-full relative transition-colors ${settings?.automationActive ? 'bg-indigo-500' : 'bg-slate-600'}`}>
+                        <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all shadow-sm ${settings?.automationActive ? 'left-5' : 'left-1'}`} />
+                    </div>
+                </div>
+
+                <nav className="space-y-1">
+                    <button className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium text-white bg-slate-800/50 rounded-lg"><Icons.Users /> Contatos</button>
+                    <button onClick={() => setIsSettingsOpen(true)} className="w-full flex items-center gap-3 px-3 py-2 text-sm font-medium hover:text-white hover:bg-slate-800/50 rounded-lg transition-colors"><Icons.Pencil /> Ajustes</button>
+                </nav>
             </div>
-            <div className={`p-4 rounded-xl border mb-4 ${settings?.automationActive?'bg-indigo-900/40 border-indigo-500':'bg-slate-800'}`}>
-                <div className="flex justify-between items-center"><span className="text-xs font-bold text-slate-300">Automação</span><button onClick={toggleAutomation} className={`w-10 h-5 rounded-full relative ${settings?.automationActive?'bg-indigo-500':'bg-slate-600'}`}><div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${settings?.automationActive?'left-6':'left-1'}`}/></button></div>
-            </div>
-            <div className="mt-auto flex flex-col gap-2">
-                <button onClick={()=>setIsSettingsOpen(true)} className="text-sm bg-slate-800 p-2 rounded hover:bg-slate-700 text-left">⚙️ Ajustes</button>
-                <button onClick={handleLogoutSystem} className="text-sm bg-red-900/30 text-red-300 p-2 rounded hover:bg-red-900/50 text-left">🚪 Sair do Painel</button>
-                <span className="text-xs text-center text-gray-500 mt-2">Sync: {lastSync}</span>
+
+            <div className="mt-auto p-6 border-t border-slate-800">
+                <button onClick={handleLogoutSystem} className="flex items-center gap-2 text-xs font-bold text-red-400 hover:text-red-300 transition-colors">
+                    <Icons.Pause /> Sair do Sistema
+                </button>
+                <div className="text-[10px] text-slate-600 mt-2 text-center">Sync: {lastSync}</div>
             </div>
         </aside>
 
-        <main className="flex-1 p-8 overflow-y-auto">
-            <header className="flex justify-between items-center mb-6">
-                <h2 className="text-2xl font-bold">Contatos</h2>
-                <div className="flex gap-2">
-                    <button onClick={()=>setIsImportOpen(true)} className="bg-white border px-4 py-2 rounded-full font-bold shadow-sm flex items-center gap-2 hover:bg-gray-50"><Icons.CloudDownload/> Importar</button>
-                    <button onClick={()=>{setEditingContact(null);setIsModalOpen(true)}} className="bg-gradient-to-r from-blue-600 to-indigo-600 text-white px-6 py-2 rounded-full font-bold shadow-lg hover:scale-105 transition-all"><Icons.Plus/> Novo Contato</button>
+        {/* CONTEÚDO PRINCIPAL */}
+        <main className="flex-1 h-screen overflow-hidden flex flex-col">
+            {/* Header com Search Global */}
+            <header className="px-8 py-6 bg-white border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
+                <div>
+                    <h1 className="text-2xl font-bold text-slate-800">Contatos</h1>
+                    <p className="text-sm text-slate-400">Gerencie seu funil de vendas</p>
+                </div>
+                
+                <div className="flex flex-1 max-w-2xl w-full gap-4 items-center justify-end">
+                    {/* Search Bar */}
+                    <div className="relative w-full max-w-md group">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-500 transition-colors">
+                            <Icons.Search />
+                        </div>
+                        <input 
+                            type="text" 
+                            className="block w-full pl-10 pr-3 py-2.5 border-none rounded-xl bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:bg-white transition-all shadow-inner"
+                            placeholder="Buscar por nome ou telefone..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+
+                    <button onClick={() => setIsImportOpen(true)} className="p-2.5 text-slate-500 hover:bg-slate-50 rounded-lg border border-transparent hover:border-slate-200 transition-all" title="Importar">
+                        <Icons.CloudDownload />
+                    </button>
+                    <button onClick={() => { setEditingContact(null); setIsModalOpen(true); }} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-sm shadow-md shadow-blue-200 transition-all flex items-center gap-2 shrink-0">
+                        <Icons.Plus /> Novo Contato
+                    </button>
                 </div>
             </header>
 
-            <div className="flex gap-2 mb-4">
-                {['ALL',...Object.values(ContactType)].map(t => {
-                    const typeContacts = contacts.filter(c => t === 'ALL' || c.type === t);
-                    const total = typeContacts.length;
-                    const waiting = typeContacts.filter(c => c.automationStage === 1 || c.automationStage === 2).length;
-                    return (
-                        <button key={t} onClick={()=>setFilterType(t)} className={`px-4 py-1 rounded-full text-sm font-bold flex items-center gap-2 ${filterType===t?'bg-blue-600 text-white':'bg-white border'}`}>
-                            {t==='ALL'?'Todos':t}
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full ${filterType===t ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'}`}>({waiting} / {total})</span>
-                        </button>
-                    );
-                })}
+            {/* Filtros e Lista */}
+            <div className="flex-1 overflow-hidden flex flex-col p-8 pt-6">
+                
+                {/* Filter Chips */}
+                <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide shrink-0">
+                    {['ALL', ...Object.values(ContactType)].map(t => {
+                        const typeContacts = contacts.filter(c => t === 'ALL' || c.type === t);
+                        const isActive = filterType === t;
+                        return (
+                            <button 
+                                key={t} 
+                                onClick={() => setFilterType(t)} 
+                                className={`px-4 py-2 rounded-full text-sm font-medium transition-all border whitespace-nowrap flex items-center gap-2
+                                ${isActive ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}
+                            >
+                                {t === 'ALL' ? 'Todos' : t}
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>
+                                    {typeContacts.length}
+                                </span>
+                            </button>
+                        );
+                    })}
+                </div>
+
+                {/* RICH LIST (Cards Layout) */}
+                <div className="flex-1 overflow-y-auto space-y-3 pr-2 pb-20">
+                    {filtered.map(c => {
+                        const lastDate = new Date(c.lastContactDate || Date.now());
+                        const nextDate = new Date(lastDate);
+                        nextDate.setDate(lastDate.getDate() + c.followUpFrequencyDays);
+                        const daysWait = Math.floor((Date.now() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
+                        const isAlert = c.automationStage === 3;
+                        const initialColor = getColorFromInitial(c.name);
+
+                        // Cálculo status visual
+                        let statusBadge = <span className="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full text-xs font-bold border border-slate-200">Em dia</span>;
+                        if(c.automationStage === 1) statusBadge = <span className="bg-blue-50 text-blue-600 px-2.5 py-1 rounded-full text-xs font-bold border border-blue-100 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500"/> Aguardando (1)</span>;
+                        if(c.automationStage === 2) statusBadge = <span className="bg-purple-50 text-purple-600 px-2.5 py-1 rounded-full text-xs font-bold border border-purple-100 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-500"/> Aguardando (2)</span>;
+                        if(isAlert) statusBadge = <span className="bg-red-50 text-red-600 px-2.5 py-1 rounded-full text-xs font-bold border border-red-100 flex items-center gap-1 animate-pulse"><span className="w-1.5 h-1.5 rounded-full bg-red-500"/> Sem Retorno</span>;
+
+                        return (
+                            <div key={c.id} className={`group bg-white rounded-xl p-4 border border-slate-100 shadow-sm hover:shadow-md hover:border-blue-100 transition-all relative ${c.hasUnreadReply ? 'ring-2 ring-yellow-400 bg-yellow-50/30' : ''}`}>
+                                
+                                {selectedId === c.id && (
+                                    <div className="absolute inset-x-0 -bottom-32 z-20 p-4 bg-white rounded-b-xl shadow-xl border-t border-slate-100 animate-in slide-in-from-top-2">
+                                        <textarea className="w-full border border-slate-200 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-100 outline-none mb-2 shadow-inner" rows={3} value={genMsg} onChange={e=>setGenMsg(e.target.value)} placeholder="Edite a mensagem antes de enviar..." autoFocus/>
+                                        <div className="flex justify-end gap-2">
+                                            <button onClick={()=>setSelectedId(null)} className="px-3 py-1.5 text-xs font-bold text-slate-500 hover:bg-slate-100 rounded">Cancelar</button>
+                                            <button onClick={()=>sendManual(c)} disabled={sending} className="px-4 py-1.5 text-xs font-bold bg-blue-600 text-white rounded hover:bg-blue-700 shadow-lg shadow-blue-200 disabled:opacity-50 flex items-center gap-2">
+                                                {sending ? 'Enviando...' : <><Icons.Flash/> Enviar Agora</>}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="flex items-center justify-between gap-4">
+                                    {/* 1. Identity Section */}
+                                    <div className="flex items-center gap-4 min-w-[200px]">
+                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shadow-sm ${initialColor}`}>
+                                            {getInitials(c.name)}
+                                        </div>
+                                        <div>
+                                            <h3 className="font-bold text-slate-800 text-sm">{c.name}</h3>
+                                            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{c.type}</p>
+                                        </div>
+                                    </div>
+
+                                    {/* 2. Status Badge */}
+                                    <div className="hidden md:flex items-center min-w-[120px]">
+                                        {c.hasUnreadReply ? (
+                                            <span className="bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm"><Icons.Bell/> Nova msg</span>
+                                        ) : statusBadge}
+                                    </div>
+
+                                    {/* 3. Dates/Metrics */}
+                                    <div className="hidden lg:flex flex-col gap-1 text-[11px] text-slate-500 min-w-[140px]">
+                                        <div className="flex items-center gap-1.5">
+                                            <Icons.Clock />
+                                            <span className={daysWait > c.followUpFrequencyDays ? 'text-red-500 font-bold' : ''}>Último: {daysWait} dias</span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 opacity-70">
+                                            <Icons.Calendar />
+                                            <span>Próx: {nextDate.toLocaleDateString('pt-BR').slice(0,5)}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* 4. Actions (Primary & Secondary) */}
+                                    <div className="flex items-center gap-2 ml-auto">
+                                        {/* Toggle Auto */}
+                                        <button 
+                                            onClick={() => persistContacts(contacts.map(x => x.id === c.id ? { ...x, autoPilotEnabled: !c.autoPilotEnabled } : x))}
+                                            className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${c.autoPilotEnabled !== false ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
+                                            title="Automação"
+                                        >
+                                            {c.autoPilotEnabled !== false ? <span className="text-xs">ON</span> : <span className="text-[10px]">OFF</span>}
+                                        </button>
+
+                                        {/* Primary Actions */}
+                                        <button onClick={() => setChatContact(c)} className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100 hover:scale-110 transition-all shadow-sm" title="Abrir Chat"><Icons.WhatsApp/></button>
+                                        <button onClick={() => { setSelectedId(c.id); generateFollowUpMessage(c, settings!, false).then(setGenMsg); }} className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-100 hover:scale-110 transition-all shadow-sm" title="Gerar Msg"><Icons.Flash/></button>
+
+                                        {/* Kebab Menu (Dropdown) */}
+                                        <div className="relative">
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === c.id ? null : c.id); }}
+                                                className="w-8 h-8 rounded-full text-slate-400 hover:bg-slate-50 hover:text-slate-600 flex items-center justify-center transition-colors"
+                                            >
+                                                <Icons.MoreVertical />
+                                            </button>
+                                            
+                                            {openMenuId === c.id && (
+                                                <div className="absolute right-0 top-10 w-48 bg-white rounded-lg shadow-xl border border-slate-100 z-50 py-1 text-sm animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                                                    <button onClick={() => { handleUpdateContact(c); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-2"><Icons.Pencil /> Editar</button>
+                                                    <button onClick={() => { handleForceTest(c); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-2"><Icons.Refresh /> Resetar Ciclo</button>
+                                                    <div className="h-px bg-slate-100 my-1" />
+                                                    <button onClick={() => { setConfirmData({show:true, msg:'Excluir contato permanentemente?', action:()=>handleDelete(c.id)}); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600 font-medium flex items-center gap-2"><Icons.Trash /> Excluir</button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow border overflow-hidden">
-                <table className="w-full text-left">
-                    <thead className="bg-gray-50 text-xs uppercase text-gray-500"><tr><th className="p-4">Auto</th><th className="p-4">Nome</th><th className="p-4">Status</th><th className="p-4 text-right">Ações</th></tr></thead>
-                    <tbody className="divide-y text-sm">
-                        {filtered.map(c => {
-                             const lastDate = new Date(c.lastContactDate||Date.now());
-                             const nextDate = new Date(lastDate);
-                             nextDate.setDate(lastDate.getDate() + c.followUpFrequencyDays);
-                             
-                             const daysWait = Math.floor((Date.now()-lastDate.getTime())/(1000*60*60*24));
-                             const isAlert = c.automationStage === 3;
-                             return (
-                            <React.Fragment key={c.id}>
-                                <tr className={`hover:bg-gray-50 ${c.hasUnreadReply?'bg-yellow-50':isAlert?'bg-red-50':''}`}>
-                                    <td className="p-4"><button onClick={()=>persistContacts(contacts.map(x=>x.id===c.id?{...x,autoPilotEnabled:!c.autoPilotEnabled}:x))} className={`w-8 h-8 rounded-full flex items-center justify-center ${c.autoPilotEnabled!==false?'bg-green-100 text-green-600':'bg-gray-100 text-gray-400'}`} title={c.autoPilotEnabled!==false?'Pausar automação':'Ativar automação'}>{c.autoPilotEnabled!==false?<Icons.Pause/>:<Icons.Play/>}</button></td>
-                                    <td className="p-4 font-bold">{c.name}<div className="text-xs font-normal text-gray-500">{c.type}</div>{c.hasUnreadReply && <div className="text-xs text-yellow-600 font-bold animate-pulse">🔔 Nova Mensagem</div>}</td>
-                                    <td className="p-4">
-                                        <div className="text-xs text-gray-700 font-medium">Último: {daysWait} dias atrás</div>
-                                        <div className="text-[10px] text-gray-400 mb-1">Próximo: {nextDate.toLocaleDateString('pt-BR')}</div>
-                                        
-                                        {c.automationStage === 1 && <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-xs font-bold">● Aguardando (1)</span>}
-                                        {c.automationStage === 2 && <span className="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-xs font-bold">● Aguardando (2)</span>}
-                                        {c.automationStage === 3 && <span className="bg-red-100 text-red-700 px-2 py-0.5 rounded text-xs font-bold animate-pulse">● SEM RETORNO</span>}
-                                    </td>
-                                    <td className="p-4 text-right flex justify-end gap-2">
-                                        {isAlert ? (
-                                            <>
-                                                <button onClick={()=>handleResetStage(c)} className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs font-bold" title="Zerar ciclo e manter">Resetar</button>
-                                                <button onClick={()=>setConfirmData({show:true, msg:'Enviar despedida e excluir?', action:()=>handleGoodbye(c,true)})} className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs font-bold" title="Finalizar e excluir">Despedir</button>
-                                            </>
-                                        ) : (
-                                            <>
-                                                <button onClick={()=>handleForceTest(c)} className="p-2 bg-yellow-50 text-yellow-600 rounded" title="Envio de mensagem agora"><Icons.Flash/></button>
-                                                <button onClick={()=>{setChatContact(c)}} className="p-2 bg-green-50 text-green-600 rounded" title="Abrir Chat (Não marca lido)"><Icons.WhatsApp/></button>
-                                                <button onClick={()=>{setSelectedId(c.id);generateFollowUpMessage(c,settings!,false).then(setGenMsg)}} className="p-2 bg-blue-50 text-blue-600 rounded" title="Gerar Mensagem Manual"><Icons.Message/></button>
-                                                <button onClick={()=>{setEditingContact(c);setIsModalOpen(true)}} className="p-2 bg-gray-50 text-gray-600 rounded" title="Editar Contato"><Icons.Users/></button>
-                                                <button onClick={()=>handleDelete(c.id)} className="p-2 bg-red-50 text-red-600 rounded" title="Excluir Contato"><Icons.Trash/></button>
-                                            </>
-                                        )}
-                                    </td>
-                                </tr>
-                                {selectedId===c.id && <tr className="bg-blue-50/50"><td colSpan={4} className="p-4"><div className="bg-white border p-4 rounded max-w-2xl mx-auto"><textarea className="w-full border rounded p-2 mb-2" rows={3} value={genMsg} onChange={e=>setGenMsg(e.target.value)}/><div className="flex justify-end gap-2"><button onClick={()=>setSelectedId(null)} className="px-3 py-1 bg-gray-200 rounded">Cancelar</button><button onClick={()=>sendManual(c)} disabled={sending} className="px-3 py-1 bg-blue-600 text-white rounded font-bold">Enviar</button></div></div></td></tr>}
-                            </React.Fragment>
-                        );})}
-                    </tbody>
-                </table>
-            </div>
-            
-            {unread.length>0 && <button onClick={()=>setIsInboxOpen(true)} className="fixed bottom-6 right-6 bg-red-600 text-white p-4 rounded-full shadow-xl animate-bounce z-50"><Icons.Message/><span className="absolute -top-1 -right-1 bg-white text-red-600 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold border">{unread.length}</span></button>}
-            
+            {/* Inbox Button */}
+            {unread.length > 0 && (
+                <button onClick={() => setIsInboxOpen(true)} className="fixed bottom-8 right-8 bg-blue-600 text-white p-4 rounded-full shadow-2xl shadow-blue-500/50 hover:scale-110 transition-transform z-50 flex items-center gap-2 pr-6 group">
+                    <span className="relative">
+                        <Icons.Message />
+                        <span className="absolute -top-2 -right-2 bg-red-500 text-white w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border-2 border-blue-600">{unread.length}</span>
+                    </span>
+                    <span className="font-bold text-sm">Inbox</span>
+                </button>
+            )}
+
+            {/* MODALS */}
             <ContactModal isOpen={isModalOpen} onClose={()=>setIsModalOpen(false)} onSave={handleSaveContact} initialContact={editingContact} settings={settings} defaultType={filterType!=='ALL'?(filterType as ContactType):ContactType.CLIENT}/>
             <ImportModal isOpen={isImportOpen} onClose={()=>setIsImportOpen(false)} serverUrl={settings?.serverUrl||''} existingContacts={contacts} onImport={handleImportContacts} settings={settings!} apiHeaders={getHeaders()}/>
             <QRCodeModal isOpen={isQRCodeOpen} onClose={()=>setIsQRCodeOpen(false)} onConnected={()=>{setServerStatus(true);setIsQRCodeOpen(false)}} serverUrl={settings?.serverUrl} onUrlChange={u=>persistSettings({...settings!,serverUrl:u})}/>
             <SettingsModal isOpen={isSettingsOpen} onClose={()=>setIsSettingsOpen(false)} settings={settings!} onSave={persistSettings}/>
             
-            {/* INBOX MODAL */}
             {isInboxOpen && (
-                <div className="fixed inset-0 bg-black/60 z-[60] flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col animate-in zoom-in-95">
-                        <div className="p-4 border-b flex justify-between"><h3 className="font-bold">Inbox ({unread.length})</h3><button onClick={()=>setIsInboxOpen(false)}>✕</button></div>
-                        <div className="p-4 overflow-y-auto space-y-3">
+                <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full max-h-[80vh] flex flex-col animate-in zoom-in-95">
+                        <div className="p-5 border-b flex justify-between items-center"><h3 className="font-bold text-lg text-slate-800">Inbox ({unread.length})</h3><button onClick={()=>setIsInboxOpen(false)} className="text-slate-400 hover:text-slate-600 text-xl">✕</button></div>
+                        <div className="p-5 overflow-y-auto space-y-4 bg-slate-50">
                             {unread.map(c=>(
-                                <div key={c.id} className="border p-3 bg-yellow-50 rounded-lg">
-                                    <div className="font-bold">{c.name}</div>
-                                    <div className="text-sm my-2 italic text-gray-700">"{c.lastReplyContent||'Nova mensagem'}"</div>
-                                    <div className="flex gap-2">
-                                        <button onClick={()=>{setIsInboxOpen(false);setChatContact(c);}} className="flex-1 bg-green-600 text-white py-1 rounded text-xs font-bold" title="Abrir Chat sem marcar como lido">Chat</button>
-                                        <button onClick={()=>{setIsInboxOpen(false);handleUpdateContact(c);}} className="flex-1 bg-blue-600 text-white py-1 rounded text-xs font-bold" title="Editar obs e atualizar status">Atualizar</button>
-                                        <button onClick={()=>{setIsInboxOpen(false);setConfirmData({show:true,msg:'Finalizar e excluir este contato?',action:()=>handleFinalizeContact(c)})}} className="flex-1 bg-red-600 text-white py-1 rounded text-xs font-bold" title="Excluir contato e remover notificação">Finalizar</button>
+                                <div key={c.id} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="font-bold text-slate-800">{c.name}</div>
+                                        <span className="text-[10px] text-slate-400">{new Date(c.lastReplyTimestamp || 0).toLocaleTimeString()}</span>
+                                    </div>
+                                    <div className="bg-yellow-50 p-3 rounded-lg text-sm text-slate-700 italic border border-yellow-100 mb-4 relative">
+                                        <div className="absolute -top-1 left-4 w-2 h-2 bg-yellow-50 transform rotate-45 border-t border-l border-yellow-100"></div>
+                                        "{c.lastReplyContent || 'Nova mensagem de áudio/mídia'}"
+                                    </div>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        <button onClick={()=>{setIsInboxOpen(false);setChatContact(c);}} className="bg-green-50 text-green-700 py-2 rounded-lg text-xs font-bold hover:bg-green-100 transition-colors">Responder</button>
+                                        <button onClick={()=>{setIsInboxOpen(false);handleUpdateContact(c);}} className="bg-blue-50 text-blue-700 py-2 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors">Atualizar</button>
+                                        <button onClick={()=>{setIsInboxOpen(false);setConfirmData({show:true,msg:'Finalizar e excluir este contato?',action:()=>handleFinalizeContact(c)})}} className="bg-red-50 text-red-700 py-2 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors">Finalizar</button>
                                     </div>
                                 </div>
                             ))}
@@ -599,9 +624,9 @@ const App: React.FC = () => {
                 </div>
             )}
             
-            {chatContact && <ChatModal contact={chatContact} onClose={handleCloseChat} serverUrl={settings?.serverUrl||''} apiHeaders={getHeaders()} />}
-            {confirmData.show && <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center"><div className="bg-white p-6 rounded shadow-xl text-center"><p className="mb-4 font-bold">{confirmData.msg}</p><div className="flex gap-2 justify-center"><button onClick={()=>setConfirmData({show:false})} className="px-4 py-2 bg-gray-200 rounded">Cancelar</button><button onClick={()=>{confirmData.action();setConfirmData({show:false})}} className="px-4 py-2 bg-red-600 text-white rounded font-bold">Sim</button></div></div></div>}
-            {toast && <div className={`fixed top-4 right-4 z-[80] px-4 py-2 rounded text-white font-bold ${toast.type==='success'?'bg-green-600':'bg-red-600'}`}>{toast.msg}</div>}
+            {chatContact && <ChatModal contact={chatContact} onClose={()=>setChatContact(null)} serverUrl={settings?.serverUrl||''} apiHeaders={getHeaders()} />}
+            {confirmData.show && <div className="fixed inset-0 bg-slate-900/60 z-[70] flex items-center justify-center p-4"><div className="bg-white p-6 rounded-xl shadow-2xl max-w-sm w-full text-center animate-in zoom-in-95"><div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4"><Icons.Trash/></div><h3 className="font-bold text-lg mb-2">Tem certeza?</h3><p className="text-slate-500 text-sm mb-6">{confirmData.msg}</p><div className="flex gap-3 justify-center"><button onClick={()=>setConfirmData({show:false})} className="flex-1 px-4 py-2.5 bg-slate-100 text-slate-700 rounded-lg font-bold hover:bg-slate-200">Cancelar</button><button onClick={()=>{confirmData.action();setConfirmData({show:false})}} className="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-lg font-bold hover:bg-red-700 shadow-lg shadow-red-200">Sim, Confirmar</button></div></div></div>}
+            {toast && <div className={`fixed top-6 right-6 z-[100] px-6 py-3 rounded-xl text-white font-bold shadow-2xl animate-in slide-in-from-right-10 flex items-center gap-3 ${toast.type==='success'?'bg-slate-800 border border-slate-700':'bg-red-600'}`}>{toast.type === 'success' ? <Icons.Check/> : null} {toast.msg}</div>}
         </main>
     </div>
   );
