@@ -4,8 +4,6 @@ try {
     require.resolve('express');
 } catch (e) {
     console.error("❌ ERRO CRÍTICO: A dependência 'express' não foi encontrada.");
-    console.error("Isso geralmente acontece quando 'npm install' falha silenciosamente.");
-    console.error("Verifique os logs de instalação (Build Logs) para erros como 'No matching version found'.");
     process.exit(1);
 }
 
@@ -17,10 +15,10 @@ const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
 const { GoogleGenAI } = require("@google/genai");
+const { transform } = require('sucrase');
 
 console.log("✅ Dependências carregadas com sucesso.");
 
-// --- CONFIGURAÇÃO DA EQUIPE (TRANSPARENTE PARA O USUÁRIO) ---
 const TEAM_GEMINI_API_KEY = process.env.API_KEY || "AIzaSy..."; 
 
 const app = express();
@@ -31,26 +29,43 @@ const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-// --- MIDDLEWARE PARA SERVIR ARQUIVOS TSX/TS SEM BUILD ---
-// Permite que o navegador solicite './App' e o servidor entregue './App.tsx'
-app.use((req, res, next) => {
-    // Ignora API e raiz
+// --- MIDDLEWARE DE COMPILAÇÃO JIT (JUST-IN-TIME) ---
+// Transforma arquivos .tsx/.ts em .js compatível com navegador dinamicamente
+app.get('*', (req, res, next) => {
     if (req.path === '/' || req.path.startsWith('/qr') || req.path.startsWith('/status')) return next();
+
+    // Tenta encontrar o arquivo solicitado
+    let filePath = path.join(__dirname, req.path);
+    let exists = fs.existsSync(filePath) && fs.statSync(filePath).isFile();
     
-    // Se a requisição não tem extensão, tenta encontrar o arquivo .tsx ou .ts correspondente
-    if (!req.path.includes('.')) {
-        const potentialExtensions = ['.tsx', '.ts', '.js'];
-        for (const ext of potentialExtensions) {
-            const fullPath = path.join(__dirname, req.path + ext);
-            if (fs.existsSync(fullPath)) {
-                return res.sendFile(fullPath);
-            }
+    // Se não achou, tenta extensões .tsx ou .ts
+    if (!exists) {
+        if (fs.existsSync(filePath + '.tsx')) { filePath += '.tsx'; exists = true; }
+        else if (fs.existsSync(filePath + '.ts')) { filePath += '.ts'; exists = true; }
+    }
+
+    if (exists && (filePath.endsWith('.tsx') || filePath.endsWith('.ts'))) {
+        try {
+            const content = fs.readFileSync(filePath, 'utf8');
+            // Compila TS/JSX para JS moderno
+            const compiled = transform(content, {
+                transforms: ['typescript', 'jsx'],
+                jsxRuntime: 'automatic',
+                production: true
+            }).code;
+
+            res.setHeader('Content-Type', 'application/javascript');
+            return res.send(compiled);
+        } catch (e) {
+            console.error(`Erro ao compilar ${filePath}:`, e);
+            return res.status(500).send("Erro de compilação");
         }
     }
+    
     next();
 });
 
-// Serve os arquivos estáticos (HTML, CSS, JS, Imagens) da pasta raiz
+// Serve arquivos estáticos restantes (CSS, imagens, HTML)
 app.use(express.static(__dirname));
 
 console.log(`🔧 Configurando servidor na porta ${PORT}...`);
@@ -128,13 +143,11 @@ function generateTemplateFallback(contact, settings, stage = 0) {
         return `Olá ${contact.name}, conseguiu ver minha mensagem anterior? Gostaria apenas de confirmar se ainda tem interesse.`;
     }
 
-    // Padrão
     let specificPart = "continuamos com o assunto";
     if (contact.type === 'Proprietário') specificPart = "seu imóvel ainda está disponível";
     if (contact.type === 'Construtor') specificPart = "temos novas oportunidades de áreas";
     if (contact.type === 'Cliente/Comprador') specificPart = "encontrei opções no seu perfil";
     
-    // Inserção inteligente de notas se existirem (fallback manual)
     if (contact.notes && contact.notes.length < 50) {
        specificPart += ` (${contact.notes})`;
     }
@@ -177,7 +190,7 @@ function saveSettings(s) { try { fs.writeFileSync(SETTINGS_FILE, JSON.stringify(
 let qrCodeData = null;
 let clientStatus = 'initializing';
 let isReady = false;
-let lastQrCode = ''; // Para evitar spam no log
+let lastQrCode = '';
 
 console.log("📲 Iniciando cliente WhatsApp...");
 const client = new Client({
@@ -198,10 +211,8 @@ const client = new Client({
 });
 
 client.on('qr', (qr) => { 
-    // Evita spam de logs se o QR for o mesmo
     if (qr === lastQrCode) return;
     lastQrCode = qr;
-
     console.log("🔹 Novo QR Code gerado (escaneie para conectar):");
     qrcodeTerminal.generate(qr, { small: true }); 
     qrcode.toDataURL(qr, (err, url) => { 
@@ -249,7 +260,7 @@ client.on('message', async msg => {
             c.hasUnreadReply = true;
             c.lastReplyContent = msg.body;
             c.lastReplyTimestamp = Date.now();
-            c.automationStage = 0; // RESET
+            c.automationStage = 0; 
             c.lastContactDate = new Date().toISOString(); 
             updated = true;
         }
@@ -273,31 +284,25 @@ async function runAutomationCycle() {
         if (c.autoPilotEnabled === false) continue;
         if (c.hasUnreadReply) continue;
         
-        // ESTÁGIO 0: IDLE -> ENVIA MSG 1
         if (c.automationStage === 0) {
             const lastDate = new Date(c.lastContactDate || now).getTime();
             const freqDays = c.followUpFrequencyDays || 30;
             const diffDays = (now - lastDate) / (1000 * 60 * 60 * 24);
             
-            // console.log(`🔎 ${c.name} (E0): ${diffDays.toFixed(1)}/${freqDays} dias.`);
-
             if (diffDays >= freqDays) {
                 console.log(`⚡ Enviando MSG 1 para ${c.name}`);
                 const msg = await generateAIMessage(c, settings, 0);
                 if (await sendWpp(c.phone, msg)) {
                     c.automationStage = 1;
                     c.lastAutomatedMsgDate = new Date().toISOString();
-                    c.lastContactDate = new Date().toISOString(); // Atualiza data último contato
+                    c.lastContactDate = new Date().toISOString();
                     changed = true;
                 }
             }
         }
-        // ESTÁGIO 1: ESPERANDO -> ENVIA MSG 2 (COBRANÇA) - 2 DIAS DEPOIS
         else if (c.automationStage === 1) {
             const lastAuto = new Date(c.lastAutomatedMsgDate).getTime();
             const diffDays = (now - lastAuto) / (1000 * 60 * 60 * 24);
-            
-            // console.log(`🔎 ${c.name} (E1): Esperando há ${diffDays.toFixed(1)} dias.`);
             
             if (diffDays >= 2) {
                 console.log(`⚡ Enviando MSG 2 (Cobrança) para ${c.name}`);
@@ -309,14 +314,13 @@ async function runAutomationCycle() {
                 }
             }
         }
-        // ESTÁGIO 2: ESPERANDO -> ALERTA (SEM RETORNO) - 1 DIA DEPOIS
         else if (c.automationStage === 2) {
              const lastAuto = new Date(c.lastAutomatedMsgDate).getTime();
              const diffDays = (now - lastAuto) / (1000 * 60 * 60 * 24);
              
              if (diffDays >= 1) {
                  console.log(`⚠️ ${c.name}: Sem retorno. Marcando ALERTA.`);
-                 c.automationStage = 3; // ALERTA
+                 c.automationStage = 3; 
                  changed = true;
              }
         }
