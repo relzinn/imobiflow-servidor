@@ -101,7 +101,7 @@ async function generateAIMessage(contact, settings, stage = 0) {
     const tone = contact.messageTone || settings.messageTone || "Casual";
 
     if (!TEAM_GEMINI_API_KEY || TEAM_GEMINI_API_KEY.length < 20 || TEAM_GEMINI_API_KEY.startsWith("AIzaSy...")) {
-        console.warn("⚠️ Chave API inválida ou padrão. Usando fallback.");
+        console.warn("⚠️ Chave API inválida ou padrão detectada. Usando Modo Template (Fallback).");
         return generateTemplateFallback(contact, settings, stage);
     }
 
@@ -109,7 +109,7 @@ async function generateAIMessage(contact, settings, stage = 0) {
         const ai = new GoogleGenAI({ apiKey: TEAM_GEMINI_API_KEY });
         const modelId = "gemini-2.5-flash";
 
-        const internalNotes = contact.notes ? `OBSERVAÇÃO INTERNA: "${contact.notes}"` : "Sem observações.";
+        const internalNotes = contact.notes ? `OBSERVAÇÃO INTERNA DO CORRETOR: "${contact.notes}"` : "Sem observações.";
 
         let stageContext = "Primeira mensagem de retomada de contato (Follow-up padrão).";
         if (stage === 1) { // Vai para tentativa 2
@@ -132,14 +132,15 @@ async function generateAIMessage(contact, settings, stage = 0) {
           Escreva uma mensagem de WhatsApp para ${contact.name}.
           
           CONTEXTO: ${stageContext}
-          PERFIL: ${contact.type}.
+          PERFIL DO CONTATO: ${contact.type}.
           ${internalNotes}
-          ESTRATÉGIA: ${specificStrategy}
+          ESTRATÉGIA DO TIPO: ${specificStrategy}
           
-          INSTRUÇÕES:
-          1. Use a observação para personalizar, mas NÃO diga "Vi na anotação".
-          2. Tom de Voz: ${tone}.
-          3. Curto e direto.
+          INSTRUÇÕES OBRIGATÓRIAS:
+          1. Integre a "OBSERVAÇÃO INTERNA" no texto de forma natural, como se você lembrasse do assunto.
+          2. JAMAIS coloque a observação entre parênteses ou aspas. Exemplo ERRADO: "Olá (quer casa no centro)". Exemplo CERTO: "Olá, encontrei algumas opções de casa no centro que você queria."
+          3. Tom de Voz: ${tone}.
+          4. Seja curto, direto e humano. Evite linguagem robótica.
         `;
 
         const response = await ai.models.generateContent({
@@ -171,10 +172,9 @@ function generateTemplateFallback(contact, settings, stage = 0) {
     if (contact.type === 'Construtor') specificPart = "temos novas oportunidades de áreas";
     if (contact.type === 'Cliente/Comprador') specificPart = "encontrei opções no seu perfil";
     
-    if (contact.notes && contact.notes.length < 50) {
-       specificPart += ` (${contact.notes})`;
-    }
-
+    // CORREÇÃO: Removemos a inserção bruta de notas entre parênteses.
+    // O fallback deve ser genérico e seguro.
+    
     return `Olá ${contact.name}, aqui é ${agent}. Passando para saber se ${specificPart}. Podemos falar?`;
 }
 
