@@ -7,6 +7,8 @@ const fs = require('fs');
 const path = require('path');
 const { GoogleGenAI } = require("@google/genai");
 
+console.log("🚀 Iniciando servidor ImobiFlow...");
+
 // --- CONFIGURAÇÃO DA EQUIPE (TRANSPARENTE PARA O USUÁRIO) ---
 const TEAM_GEMINI_API_KEY = "AIzaSy..."; // <--- COLE SUA CHAVE AQUI
 
