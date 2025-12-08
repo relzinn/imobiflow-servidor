@@ -53,6 +53,9 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
     const [reviewType, setReviewType] = useState<ContactType>(ContactType.CLIENT);
     const [reviewTone, setReviewTone] = useState('');
 
+    // Opções completas de tom de voz para manter consistência com o ContactModal
+    const toneOptions = ['Casual', 'Formal', 'Persuasivo', 'Amigável', 'Consultivo', 'Urgente', 'Entusiasta', 'Elegante'];
+
     useEffect(() => {
         if (isOpen) {
             setSelected(new Set());
@@ -147,7 +150,13 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
                     <div className="space-y-3">
                         <div><label className="text-xs font-bold uppercase">Nome</label><input className="w-full border p-2 rounded" value={reviewName} onChange={e=>setReviewName(e.target.value)}/></div>
                         <div><label className="text-xs font-bold uppercase">Tipo</label><select className="w-full border p-2 rounded" value={reviewType} onChange={e=>setReviewType(e.target.value as any)}>{Object.values(ContactType).map(t=><option key={t} value={t}>{t}</option>)}</select></div>
-                        <div><label className="text-xs font-bold uppercase">Tom</label><select className="w-full border p-2 rounded" value={reviewTone} onChange={e=>setReviewTone(e.target.value)}><option value="">Padrão</option> {['Casual','Formal','Urgente'].map(t=><option key={t} value={t}>{t}</option>)}</select></div>
+                        <div>
+                            <label className="text-xs font-bold uppercase">Tom</label>
+                            <select className="w-full border p-2 rounded" value={reviewTone} onChange={e=>setReviewTone(e.target.value)}>
+                                <option value="">Padrão</option> 
+                                {toneOptions.map(t=><option key={t} value={t}>{t}</option>)}
+                            </select>
+                        </div>
                         <div><label className="text-xs font-bold uppercase">Obs</label><textarea className="w-full border p-2 rounded" value={reviewNotes} onChange={e=>setReviewNotes(e.target.value)}/></div>
                     </div>
                     <div className="flex justify-between mt-6 pt-4 border-t"><button onClick={onClose} className="text-gray-500 font-bold">Cancelar</button><button onClick={handleNextReview} className="bg-blue-600 text-white px-6 py-2 rounded font-bold">Salvar e Próximo</button></div>
