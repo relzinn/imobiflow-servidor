@@ -1,6 +1,6 @@
 {
   "name": "imobiflow-crm",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "CRM e Automação para Corretores",
   "main": "server.js",
   "engines": {
@@ -10,11 +10,11 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "express": "^4.19.2",
+    "express": "^4.21.1",
     "cors": "^2.8.5",
-    "qrcode": "^1.5.3",
+    "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
-    "whatsapp-web.js": "^1.23.0",
-    "@google/genai": "^0.1.2"
+    "whatsapp-web.js": "^1.26.0",
+    "@google/genai": "^1.0.0"
   }
 }

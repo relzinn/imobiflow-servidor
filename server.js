@@ -1,3 +1,14 @@
+console.log("🚀 Iniciando processo do servidor...");
+
+try {
+    require.resolve('express');
+} catch (e) {
+    console.error("❌ ERRO CRÍTICO: A dependência 'express' não foi encontrada.");
+    console.error("Isso geralmente acontece quando 'npm install' falha silenciosamente.");
+    console.error("Verifique os logs de instalação (Build Logs) para erros como 'No matching version found'.");
+    process.exit(1);
+}
+
 const express = require('express');
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
@@ -7,10 +18,10 @@ const fs = require('fs');
 const path = require('path');
 const { GoogleGenAI } = require("@google/genai");
 
-console.log("🚀 Iniciando servidor ImobiFlow...");
+console.log("✅ Dependências carregadas com sucesso.");
 
 // --- CONFIGURAÇÃO DA EQUIPE (TRANSPARENTE PARA O USUÁRIO) ---
-const TEAM_GEMINI_API_KEY = "AIzaSy..."; // <--- COLE SUA CHAVE AQUI
+const TEAM_GEMINI_API_KEY = process.env.API_KEY || "AIzaSy..."; 
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -20,6 +31,8 @@ const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
+console.log(`🔧 Configurando servidor na porta ${PORT}...`);
+
 // --- IA CENTRALIZADA ---
 
 async function generateAIMessage(contact, settings, stage = 0) {
@@ -27,7 +40,8 @@ async function generateAIMessage(contact, settings, stage = 0) {
     const agency = settings.agencyName || "nossa imobiliária";
     const tone = contact.messageTone || settings.messageTone || "Casual";
 
-    if (!TEAM_GEMINI_API_KEY || TEAM_GEMINI_API_KEY.length < 20) {
+    if (!TEAM_GEMINI_API_KEY || TEAM_GEMINI_API_KEY.length < 20 || TEAM_GEMINI_API_KEY.startsWith("AIzaSy...")) {
+        console.warn("⚠️ Chave API inválida ou padrão. Usando fallback.");
         return generateTemplateFallback(contact, settings, stage);
     }
 
@@ -142,15 +156,60 @@ let qrCodeData = null;
 let clientStatus = 'initializing';
 let isReady = false;
 
+console.log("📲 Iniciando cliente WhatsApp...");
 const client = new Client({
     authStrategy: new LocalAuth({ clientId: "imobiflow-crm-v2" }),
-    puppeteer: { headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--single-process', '--disable-gpu'] }
+    puppeteer: { 
+        headless: true, 
+        args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox', 
+            '--disable-dev-shm-usage', 
+            '--disable-accelerated-2d-canvas', 
+            '--no-first-run', 
+            '--no-zygote', 
+            '--single-process', 
+            '--disable-gpu'
+        ] 
+    }
 });
 
-client.on('qr', (qr) => { qrcodeTerminal.generate(qr, { small: true }); qrcode.toDataURL(qr, (err, url) => { if (!err) { qrCodeData = url; clientStatus = 'qr_ready'; } }); });
-client.on('ready', () => { console.log('✅ WhatsApp Conectado!'); isReady = true; clientStatus = 'ready'; qrCodeData = null; });
-client.on('authenticated', () => { console.log('🔑 Autenticado!'); clientStatus = 'authenticated'; });
-client.on('disconnected', async () => { isReady = false; clientStatus = 'disconnected'; try { await client.destroy(); } catch(e){} setTimeout(() => client.initialize().catch(console.error), 5000); });
+client.on('qr', (qr) => { 
+    console.log("🔹 QR Code recebido");
+    qrcodeTerminal.generate(qr, { small: true }); 
+    qrcode.toDataURL(qr, (err, url) => { 
+        if (!err) { 
+            qrCodeData = url; 
+            clientStatus = 'qr_ready'; 
+        } 
+    }); 
+});
+
+client.on('ready', () => { 
+    console.log('✅ WhatsApp Conectado e Pronto!'); 
+    isReady = true; 
+    clientStatus = 'ready'; 
+    qrCodeData = null; 
+});
+
+client.on('authenticated', () => { 
+    console.log('🔑 Sessão autenticada!'); 
+    clientStatus = 'authenticated'; 
+});
+
+client.on('auth_failure', (msg) => {
+    console.error('❌ Falha na autenticação', msg);
+    clientStatus = 'error';
+});
+
+client.on('disconnected', async (reason) => { 
+    console.log('⚠️ WhatsApp desconectado:', reason);
+    isReady = false; 
+    clientStatus = 'disconnected'; 
+    try { await client.destroy(); } catch(e){} 
+    console.log('🔄 Tentando reconectar em 5s...');
+    setTimeout(() => client.initialize().catch(err => console.error("Erro na reconexão:", err)), 5000); 
+});
 
 client.on('message', async msg => {
     if(msg.isStatus || msg.from.includes('@g.us') || msg.fromMe) return;
@@ -159,7 +218,7 @@ client.on('message', async msg => {
     let updated = false;
     for (let c of contacts) {
         if (isSamePhone(c.phone, fromNumber)) {
-            console.log(`🔔 Resposta de ${c.name}.`);
+            console.log(`🔔 Resposta recebida de ${c.name}`);
             c.hasUnreadReply = true;
             c.lastReplyContent = msg.body;
             c.lastReplyTimestamp = Date.now();
@@ -178,7 +237,7 @@ async function runAutomationCycle() {
     const settings = getSettings();
     if (!settings.automationActive) return;
 
-    console.log("🔄 Ciclo de Automação...");
+    console.log("🔄 Verificando automação...");
     const contacts = getContacts();
     let changed = false;
     const now = Date.now();
@@ -193,7 +252,7 @@ async function runAutomationCycle() {
             const freqDays = c.followUpFrequencyDays || 30;
             const diffDays = (now - lastDate) / (1000 * 60 * 60 * 24);
             
-            console.log(`🔎 ${c.name} (E0): ${diffDays.toFixed(1)}/${freqDays} dias.`);
+            // console.log(`🔎 ${c.name} (E0): ${diffDays.toFixed(1)}/${freqDays} dias.`);
 
             if (diffDays >= freqDays) {
                 console.log(`⚡ Enviando MSG 1 para ${c.name}`);
@@ -211,7 +270,7 @@ async function runAutomationCycle() {
             const lastAuto = new Date(c.lastAutomatedMsgDate).getTime();
             const diffDays = (now - lastAuto) / (1000 * 60 * 60 * 24);
             
-            console.log(`🔎 ${c.name} (E1): Esperando há ${diffDays.toFixed(1)} dias.`);
+            // console.log(`🔎 ${c.name} (E1): Esperando há ${diffDays.toFixed(1)} dias.`);
             
             if (diffDays >= 2) {
                 console.log(`⚡ Enviando MSG 2 (Cobrança) para ${c.name}`);
@@ -246,7 +305,7 @@ async function sendWpp(phone, msg) {
         await client.sendMessage(numberId ? numberId._serialized : chatId, msg);
         return true;
     } catch (e) {
-        console.error("Erro envio:", e.message);
+        console.error("❌ Erro envio WPP:", e.message);
         return false;
     }
 }
@@ -265,17 +324,23 @@ app.post('/settings', (req, res) => { saveSettings(req.body); res.json({success:
 
 app.get('/trigger-automation', (req, res) => { runAutomationCycle(); res.json({success:true}); });
 app.post('/generate-message', async (req, res) => {
+    console.log("🧠 Gerando mensagem IA para", req.body.contact?.name);
     const msg = await generateAIMessage(req.body.contact, req.body.settings);
     res.json({ message: msg });
 });
 
 app.post('/toggle-automation', (req, res) => {
     const s = getSettings(); s.automationActive = req.body.active; saveSettings(s);
+    console.log(`🔌 Automação ${s.automationActive ? 'ATIVADA' : 'DESATIVADA'}`);
     if(s.automationActive) setTimeout(runAutomationCycle, 1000);
     res.json({success:true});
 });
 
-app.post('/send', async (req, res) => { await sendWpp(req.body.phone, req.body.message); res.json({success:true}); });
+app.post('/send', async (req, res) => { 
+    console.log("📤 Enviando mensagem manual para", req.body.phone);
+    await sendWpp(req.body.phone, req.body.message); 
+    res.json({success:true}); 
+});
 
 app.post('/goodbye', async (req, res) => {
     const { contactId, sendMsg } = req.body;
@@ -291,6 +356,7 @@ app.post('/goodbye', async (req, res) => {
 });
 
 app.post('/logout', async (req, res) => {
+    console.log("🚪 Logout solicitado");
     try {
         await client.logout();
     } catch (e) { console.error("Logout error", e); }
@@ -327,5 +393,7 @@ app.get('/whatsapp-contacts', async (req, res) => {
     } catch (e) { res.status(500).json({error: e.message}); }
 });
 
-client.initialize().catch(console.error);
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Servidor ImobiFlow na porta ${PORT}`));
+console.log("⏳ Aguardando inicialização do WhatsApp Client...");
+client.initialize().catch(err => console.error("❌ Erro fatal na inicialização do Client:", err));
+
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Servidor ImobiFlow ouvindo na porta ${PORT}`));
