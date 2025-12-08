@@ -109,43 +109,45 @@ async function generateAIMessage(contact, settings, stage = 0) {
         const ai = new GoogleGenAI({ apiKey: TEAM_GEMINI_API_KEY });
         const modelId = "gemini-2.5-flash";
 
-        const internalNotes = contact.notes ? `OBSERVAÇÃO INTERNA DO CORRETOR: "${contact.notes}"` : "Sem observações.";
+        const internalNotes = contact.notes ? `OBSERVAÇÃO/MOTIVO REAL DO CONTATO: "${contact.notes}"` : "Sem observações específicas (apenas acompanhamento de rotina).";
 
-        let stageContext = "Primeira mensagem de retomada de contato (Follow-up padrão).";
-        if (stage === 1) { // Vai para tentativa 2
-            stageContext = "SEGUNDA TENTATIVA (Cobrança suave). O cliente não respondeu a mensagem enviada há 2 dias. Pergunte educadamente se ele viu a mensagem anterior ou se ainda tem interesse, mas sem parecer desesperado.";
+        let stageInstruction = "";
+        if (stage === 1) { // Cobrança
+            stageInstruction = "O cliente não respondeu a mensagem anterior. Seja breve e pergunte educadamente se ainda há interesse.";
         } else if (stage === 99) { // Despedida
-            stageContext = "MENSAGEM DE DESPEDIDA FINAL. O cliente não respondeu após várias tentativas. Agradeça, diga que vai encerrar o contato por enquanto para não incomodar, e deixe as portas abertas caso ele queira procurar no futuro.";
-        }
-
-        let specificStrategy = "";
-        if (contact.type === 'Proprietário') {
-            specificStrategy = "Proprietário de imóvel. Use a observação para citar o imóvel específico.";
-        } else if (contact.type === 'Construtor') {
-            specificStrategy = "Construtor. Pergunte sobre obras e novos terrenos.";
+            stageInstruction = "Despedida final. Agradeça e encerre o ciclo de contato de forma profissional.";
         } else {
-            specificStrategy = "Cliente comprador. Relembre o perfil buscado.";
+            stageInstruction = "Retomada de contato padrão (Follow-up).";
         }
 
         const prompt = `
-          Você é ${agent}, da ${agency}.
-          Escreva uma mensagem de WhatsApp para ${contact.name}.
+          ATUE COMO: ${agent}, da ${agency}.
+          TAREFA: Escrever uma mensagem de WhatsApp para o cliente ${contact.name}.
           
-          CONTEXTO: ${stageContext}
-          PERFIL DO CONTATO: ${contact.type}.
-          ${internalNotes}
-          ESTRATÉGIA DO TIPO: ${specificStrategy}
+          DADOS:
+          - Tipo de Cliente: ${contact.type}
+          - ${internalNotes}
+          - Contexto: ${stageInstruction}
           
-          INSTRUÇÕES OBRIGATÓRIAS:
-          1. Integre a "OBSERVAÇÃO INTERNA" no texto de forma natural, como se você lembrasse do assunto.
-          2. JAMAIS coloque a observação entre parênteses ou aspas. Exemplo ERRADO: "Olá (quer casa no centro)". Exemplo CERTO: "Olá, encontrei algumas opções de casa no centro que você queria."
-          3. Tom de Voz: ${tone}.
-          4. Seja curto, direto e humano. Evite linguagem robótica.
+          REGRAS RIGOROSAS (NÃO QUEBRE):
+          1. SEJA OBJETIVO: Sua meta é ter uma resposta, não contar uma história. Evite textos longos.
+          2. USE A OBSERVAÇÃO: A "OBSERVAÇÃO" acima é a única verdade. Use-a para guiar o assunto.
+          3. SEM ALUCINAÇÕES: NÃO INVENTE que "apareceu um cliente", "surgiu uma oportunidade" ou "lembrei de você por acaso" a menos que a observação diga isso explicitamente.
+          4. SEM PARÊNTESES: Nunca coloque o contexto entre parênteses. Integre no texto.
+          5. TOM DE VOZ: ${tone}. Mantenha-se focado e profissional.
+          
+          Exemplo de estrutura desejada:
+          "Olá [Nome], aqui é [Agente]. [Motivo direto baseado na observação]. [Pergunta para avançar]?"
         `;
 
         const response = await ai.models.generateContent({
             model: modelId,
             contents: prompt,
+            config: {
+                temperature: 0.3, // Baixa criatividade para evitar alucinações
+                topP: 0.8,
+                topK: 40
+            }
         });
 
         return response.text.trim();
@@ -171,9 +173,6 @@ function generateTemplateFallback(contact, settings, stage = 0) {
     if (contact.type === 'Proprietário') specificPart = "seu imóvel ainda está disponível";
     if (contact.type === 'Construtor') specificPart = "temos novas oportunidades de áreas";
     if (contact.type === 'Cliente/Comprador') specificPart = "encontrei opções no seu perfil";
-    
-    // CORREÇÃO: Removemos a inserção bruta de notas entre parênteses.
-    // O fallback deve ser genérico e seguro.
     
     return `Olá ${contact.name}, aqui é ${agent}. Passando para saber se ${specificPart}. Podemos falar?`;
 }
