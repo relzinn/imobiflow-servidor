@@ -268,19 +268,10 @@ const App: React.FC = () => {
       setToast({msg:'Teste disparado (Ciclo Resetado)', type:'success'});
   };
 
-  // Esta função agora APENAS marca no banco, mas não é chamada automaticamente ao abrir chat.
-  // Ela é chamada apenas se o usuário explicítamente marcar como lido ou salvar a edição.
-  const handleMarkAsRead = async (c: Contact) => {
-    const updated = { ...c, hasUnreadReply: false };
-    const newList = contacts.map(x => x.id === c.id ? updated : x);
-    setContacts(newList);
-    await persistContacts(newList);
-  };
-
-  // Função para fechar o chat e decidir se reabre o inbox
+  // Função para fechar o chat e REABRIR O INBOX se necessário
   const handleCloseChat = () => {
       setChatContact(null);
-      // Se houver mensagens não lidas, reabre o inbox para o usuário decidir o que fazer
+      // Se ainda houver mensagens não lidas, reabre o inbox para o usuário tomar a ação (Atualizar/Finalizar)
       if (contacts.some(c => c.hasUnreadReply)) {
           setIsInboxOpen(true);
       }
@@ -387,7 +378,7 @@ const App: React.FC = () => {
                     return (
                         <button key={t} onClick={()=>setFilterType(t)} className={`px-4 py-1 rounded-full text-sm font-bold flex items-center gap-2 ${filterType===t?'bg-blue-600 text-white':'bg-white border'}`}>
                             {t==='ALL'?'Todos':t}
-                            <span className={`text-[10px] px-2 py-0.5 rounded-full ${filterType===t ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'}`}>{waiting} / {total}</span>
+                            <span className={`text-[10px] px-2 py-0.5 rounded-full ${filterType===t ? 'bg-white/20 text-white' : 'bg-gray-100 text-gray-600'}`}>({waiting} / {total})</span>
                         </button>
                     );
                 })}

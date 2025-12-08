@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Contact, ContactType, AppSettings, AutomationStage } from '../types';
 
@@ -78,7 +79,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       automationStage: initialContact?.automationStage ?? AutomationStage.IDLE,
       autoPilotEnabled: initialContact?.autoPilotEnabled ?? true,
       lastReplyTimestamp: initialContact?.lastReplyTimestamp,
-      hasUnreadReply: false 
+      hasUnreadReply: false // FORÇAR LIMPEZA DA NOTIFICAÇÃO AO SALVAR
     });
     onClose();
   };
@@ -141,12 +142,13 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
           </div>
 
           <div>
-             <label className="block text-xs font-bold text-gray-500 mb-1">Observações Internas</label>
+             <label className="block text-xs font-bold text-gray-500 mb-1">Observações Internas {initialContact?.hasUnreadReply && <span className="text-red-500 text-xs">(Atualize com a resposta do cliente)</span>}</label>
              <textarea 
                 placeholder="Ex: Procura apto 3 quartos, reclamou do preço, quer vista pro mar..." 
-                className="w-full border rounded p-2 h-24" 
+                className={`w-full border rounded p-2 h-24 ${initialContact?.hasUnreadReply ? 'border-blue-500 bg-blue-50' : ''}`}
                 value={notes} 
                 onChange={e => setNotes(e.target.value)} 
+                autoFocus={!!initialContact?.hasUnreadReply}
              />
              <p className="text-[10px] text-gray-400 mt-1">Essa informação é interna. A IA usará apenas como contexto.</p>
           </div>

@@ -81,9 +81,6 @@ async function generateAIMessage(contact, settings, stage = 0) {
 
 function generateTemplateFallback(contact, settings, stage = 0) {
     const agent = settings.agentName || "Seu Corretor";
-    // Extrai algo entre parenteses ou usa a nota inteira se curta, senao nada.
-    // Lógica segura para template: NUNCA usar a nota crua em templates fixos para evitar gafes.
-    // Usamos frases genéricas inteligentes.
     
     if (stage === 99) {
         return `Olá ${contact.name}, como não tivemos retorno, vou encerrar nosso contato por aqui para não incomodar. Se precisar de algo no futuro, estou à disposição!`;
@@ -98,10 +95,12 @@ function generateTemplateFallback(contact, settings, stage = 0) {
     if (contact.type === 'Proprietário') specificPart = "seu imóvel ainda está disponível";
     if (contact.type === 'Construtor') specificPart = "temos novas oportunidades de áreas";
     if (contact.type === 'Cliente/Comprador') specificPart = "encontrei opções no seu perfil";
-
-    // Se tiver nota curta, tentamos inserir de forma segura (apenas se for offline mode e o usuario confiar)
-    // Mas por segurança padrão, usamos o texto generico acima.
     
+    // Inserção inteligente de notas se existirem (fallback manual)
+    if (contact.notes && contact.notes.length < 50) {
+       specificPart += ` (${contact.notes})`;
+    }
+
     return `Olá ${contact.name}, aqui é ${agent}. Passando para saber se ${specificPart}. Podemos falar?`;
 }
 
@@ -158,12 +157,12 @@ client.on('message', async msg => {
     let updated = false;
     for (let c of contacts) {
         if (isSamePhone(c.phone, fromNumber)) {
-            console.log(`🔔 Resposta de ${c.name}. Resetando automação.`);
+            console.log(`🔔 Resposta de ${c.name}.`);
             c.hasUnreadReply = true;
             c.lastReplyContent = msg.body;
             c.lastReplyTimestamp = Date.now();
             c.automationStage = 0; // RESET
-            c.lastContactDate = new Date().toISOString(); // Atualiza data
+            c.lastContactDate = new Date().toISOString(); 
             updated = true;
         }
     }
@@ -200,7 +199,7 @@ async function runAutomationCycle() {
                 if (await sendWpp(c.phone, msg)) {
                     c.automationStage = 1;
                     c.lastAutomatedMsgDate = new Date().toISOString();
-                    c.lastContactDate = new Date().toISOString();
+                    c.lastContactDate = new Date().toISOString(); // Atualiza data último contato
                     changed = true;
                 }
             }
@@ -293,7 +292,6 @@ app.post('/logout', async (req, res) => {
     try {
         await client.logout();
     } catch (e) { console.error("Logout error", e); }
-    // Reinicia o client para permitir nova conexão
     try { await client.destroy(); } catch(e){}
     client.initialize();
     isReady = false;
@@ -310,7 +308,6 @@ app.get('/chat/:phone', async (req, res) => {
     } catch { res.json([]); }
 });
 
-// Importação (getChats)
 app.get('/whatsapp-contacts', async (req, res) => {
     if (!isReady) return res.status(503).json({ error: 'Offline' });
     try {
@@ -320,7 +317,6 @@ app.get('/whatsapp-contacts', async (req, res) => {
         for(const c of chats) {
             if(!c.isGroup && !seen.has(c.id.user)) {
                 seen.add(c.id.user);
-                // Tenta pegar o timestamp da última mensagem do chat
                 const lastMsgTime = c.timestamp; 
                 unique.push({ name: c.name || c.id.user, phone: c.id.user, timestamp: lastMsgTime });
             }
