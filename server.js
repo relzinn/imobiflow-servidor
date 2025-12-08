@@ -1,3 +1,4 @@
+
 console.log("🚀 Iniciando processo do servidor...");
 
 try {
@@ -31,23 +32,24 @@ app.use(express.json());
 
 // --- MIDDLEWARE DE COMPILAÇÃO JIT (JUST-IN-TIME) ---
 app.get('*', (req, res, next) => {
-    if (req.path === '/' || req.path.startsWith('/qr') || req.path.startsWith('/status')) return next();
-
-    let filePath = path.join(__dirname, req.path);
-    let exists = fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+    // Pula arquivos estáticos comuns ou rotas de API
+    if (req.path.startsWith('/api/') || req.path === '/qr' || req.path === '/status' || req.path === '/auth-status' || req.path === '/login') return next();
     
-    // Auto-resolve extensions
-    if (!exists) {
-        if (fs.existsSync(filePath + '.tsx')) { filePath += '.tsx'; exists = true; }
-        else if (fs.existsSync(filePath + '.ts')) { filePath += '.ts'; exists = true; }
+    // Verifica se é arquivo TSX/TS
+    let filePath = path.join(__dirname, req.path);
+    if (req.path === '/') filePath = path.join(__dirname, 'index.html');
+    
+    // Se for requisição de arquivo que não existe, tenta adicionar extensão
+    let exists = fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+    if (!exists && !req.path.includes('.')) {
+         if (fs.existsSync(filePath + '.tsx')) { filePath += '.tsx'; exists = true; }
+         else if (fs.existsSync(filePath + '.ts')) { filePath += '.ts'; exists = true; }
     }
 
     if (exists && (filePath.endsWith('.tsx') || filePath.endsWith('.ts'))) {
         try {
             console.log(`🔨 Compilando: ${req.path}`);
             const content = fs.readFileSync(filePath, 'utf8');
-            // 'classic' runtime assumes React is imported manually (which it is in our files)
-            // This avoids issues with resolving 'react/jsx-runtime' on the client
             const compiled = transform(content, {
                 transforms: ['typescript', 'jsx'],
                 jsxRuntime: 'classic', 
@@ -66,6 +68,28 @@ app.get('*', (req, res, next) => {
 });
 
 app.use(express.static(__dirname));
+
+// --- MIDDLEWARE DE AUTENTICAÇÃO ---
+const authMiddleware = (req, res, next) => {
+    // Rotas públicas
+    const publicRoutes = ['/status', '/qr', '/auth-status', '/login', '/logout', '/'];
+    if (publicRoutes.includes(req.path)) return next();
+
+    const settings = getSettings();
+    const token = req.headers['x-access-token'];
+
+    // Se não tem senha configurada (setup inicial), permite
+    if (!settings.password) return next();
+
+    // Se tem senha, valida
+    if (token === settings.password) {
+        return next();
+    }
+
+    return res.status(401).json({ error: 'Unauthorized' });
+};
+
+app.use(authMiddleware);
 
 console.log(`🔧 Configurando servidor na porta ${PORT}...`);
 
@@ -345,6 +369,21 @@ setTimeout(runAutomationCycle, 10000);
 
 // --- ENDPOINTS ---
 
+app.get('/auth-status', (req, res) => {
+    const s = getSettings();
+    // Se tiver 'agentName' E 'password', está configurado.
+    res.json({ configured: !!(s.agentName && s.password) });
+});
+
+app.post('/login', (req, res) => {
+    const s = getSettings();
+    const { password } = req.body;
+    if (s.password && s.password === password) {
+        return res.json({ success: true });
+    }
+    return res.status(401).json({ success: false, error: 'Senha incorreta' });
+});
+
 app.get('/status', (req, res) => res.json({ status: clientStatus, isReady: isReady }));
 app.get('/qr', (req, res) => res.json({ qrCode: qrCodeData }));
 app.get('/contacts', (req, res) => res.json(getContacts()));
@@ -386,7 +425,7 @@ app.post('/goodbye', async (req, res) => {
 });
 
 app.post('/logout', async (req, res) => {
-    console.log("🚪 Logout solicitado");
+    console.log("🚪 Logout WPP solicitado");
     try {
         await client.logout();
     } catch (e) { console.error("Logout error", e); }

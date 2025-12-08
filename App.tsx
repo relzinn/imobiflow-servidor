@@ -9,8 +9,34 @@ import { generateFollowUpMessage } from './services/geminiService';
 
 const generateId = () => typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random()}`;
 
-// --- IMPORT MODAL ---
-const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: string, existingContacts: Contact[], onImport: (newContacts: Contact[]) => void, settings: AppSettings }> = ({ isOpen, onClose, serverUrl, existingContacts, onImport, settings }) => {
+// --- COMPONENTS ---
+
+const LoginScreen: React.FC<{ onLogin: (pass: string) => void, error: string }> = ({ onLogin, error }) => {
+    const [pass, setPass] = useState('');
+    return (
+        <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-2xl p-8 w-full max-w-sm animate-in fade-in zoom-in-95 duration-500">
+                <div className="text-center mb-6">
+                    <div className="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clipRule="evenodd" /></svg>
+                    </div>
+                    <h1 className="text-2xl font-bold text-gray-800">ImobiFlow</h1>
+                    <p className="text-gray-500 text-sm">Acesso Restrito</p>
+                </div>
+                <form onSubmit={e => { e.preventDefault(); onLogin(pass); }}>
+                    <div className="mb-4">
+                        <label className="text-xs font-bold text-gray-500 uppercase mb-1 block">Senha</label>
+                        <input type="password" autoFocus className="w-full border p-3 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition-all" value={pass} onChange={e => setPass(e.target.value)} placeholder="Sua senha..." />
+                    </div>
+                    {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-xs rounded border border-red-200">{error}</div>}
+                    <button type="submit" className="w-full bg-slate-900 text-white p-3 rounded-lg font-bold hover:bg-black transition-colors">Entrar</button>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: string, existingContacts: Contact[], onImport: (newContacts: Contact[]) => void, settings: AppSettings, apiHeaders: any }> = ({ isOpen, onClose, serverUrl, existingContacts, onImport, settings, apiHeaders }) => {
     const [waContacts, setWaContacts] = useState<{name: string, phone: string, timestamp?: number}[]>([]);
     const [selected, setSelected] = useState<Set<string>>(new Set());
     const [loading, setLoading] = useState(false);
@@ -35,7 +61,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
             setIsReviewing(false);
             setReviewQueue([]);
             setReviewedContacts([]);
-            fetch(`${serverUrl}/whatsapp-contacts`, { headers: {'ngrok-skip-browser-warning': 'true'} })
+            fetch(`${serverUrl}/whatsapp-contacts`, { headers: apiHeaders })
                 .then(res => res.json())
                 .then(data => {
                     const existingPhones = new Set(existingContacts.map(c => c.phone.replace(/\D/g, '').slice(-8)));
@@ -94,7 +120,6 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
             else if (t === ContactType.BUILDER) freq = settings.defaultFrequencyBuilder;
             else freq = settings.defaultFrequencyClient;
             
-            // Lógica de Data Inteligente
             let lastDateStr = new Date().toISOString().split('T')[0];
             if (c.timestamp) {
                 lastDateStr = new Date(c.timestamp * 1000).toISOString().split('T')[0];
@@ -109,7 +134,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
         });
         onImport(newContacts);
         onClose();
-        fetch(`${serverUrl}/trigger-automation`, { headers: {'ngrok-skip-browser-warning': 'true'} }).catch(()=>{});
+        fetch(`${serverUrl}/trigger-automation`, { headers: apiHeaders }).catch(()=>{});
     };
 
     if (!isOpen) return null;
@@ -143,21 +168,20 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
     );
 };
 
-// --- CHAT MODAL ---
-const ChatModal: React.FC<{ contact: Contact | null, onClose: () => void, serverUrl: string }> = ({ contact, onClose, serverUrl }) => {
+const ChatModal: React.FC<{ contact: Contact | null, onClose: () => void, serverUrl: string, apiHeaders: any }> = ({ contact, onClose, serverUrl, apiHeaders }) => {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [newMessage, setNewMessage] = useState('');
     const scrollRef = useRef<HTMLDivElement>(null);
 
     const fetchHistory = async () => {
         if(!contact) return;
-        try { const res = await fetch(`${serverUrl}/chat/${contact.phone}`,{headers:{'ngrok-skip-browser-warning':'true'}}); setMessages(await res.json()); } catch {}
+        try { const res = await fetch(`${serverUrl}/chat/${contact.phone}`,{headers: apiHeaders}); setMessages(await res.json()); } catch {}
     };
     useEffect(() => { if(contact){ fetchHistory(); const i = setInterval(fetchHistory,3000); return ()=>clearInterval(i); } }, [contact]);
     useEffect(() => { if(scrollRef.current) scrollRef.current.scrollTop=scrollRef.current.scrollHeight; }, [messages]);
     const handleSend = async () => {
         if(!newMessage.trim()||!contact) return;
-        await fetch(`${serverUrl}/send`,{method:'POST',headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true'},body:JSON.stringify({phone:contact.phone,message:newMessage})});
+        await fetch(`${serverUrl}/send`,{method:'POST',headers:{...apiHeaders, 'Content-Type':'application/json'},body:JSON.stringify({phone:contact.phone,message:newMessage})});
         setNewMessage(''); fetchHistory();
     };
     if(!contact) return null;
@@ -174,10 +198,8 @@ const ChatModal: React.FC<{ contact: Contact | null, onClose: () => void, server
     );
 };
 
-// --- SETTINGS MODAL ---
 const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, settings: AppSettings, onSave: (s: AppSettings) => void }> = ({ isOpen, onClose, settings, onSave }) => {
     const [s, setS] = useState(settings);
-    const [showKey, setShowKey] = useState(false);
     useEffect(()=>setS(settings),[settings,isOpen]);
     if(!isOpen) return null;
     return (
@@ -196,9 +218,9 @@ const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, settings: 
                 </div>
                 
                 <div className="pt-4 border-t"><h4 className="font-bold text-xs uppercase mb-2">Ciclo Padrão (Dias)</h4><div className="grid grid-cols-3 gap-2">
-                    <div><label className="text-[10px]">Prop</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyOwner} onChange={e=>setS({...s,defaultFrequencyOwner:Number(e.target.value)})}/></div>
-                    <div><label className="text-[10px]">Const</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyBuilder} onChange={e=>setS({...s,defaultFrequencyBuilder:Number(e.target.value)})}/></div>
-                    <div><label className="text-[10px]">Cli</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyClient} onChange={e=>setS({...s,defaultFrequencyClient:Number(e.target.value)})}/></div>
+                    <div><label className="text-[10px]">Prop</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyOwner} onChange={e => setS({...s, defaultFrequencyOwner: Number(e.target.value)})}/></div>
+                    <div><label className="text-[10px]">Const</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyBuilder} onChange={e => setS({...s, defaultFrequencyBuilder: Number(e.target.value)})}/></div>
+                    <div><label className="text-[10px]">Cli</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyClient} onChange={e => setS({...s, defaultFrequencyClient: Number(e.target.value)})}/></div>
                 </div></div>
                 <div className="flex justify-end gap-2 mt-4"><button onClick={onClose} className="px-4 py-2 bg-gray-100 rounded">Cancelar</button><button onClick={()=>{onSave(s);onClose()}} className="px-4 py-2 bg-blue-600 text-white rounded font-bold">Salvar</button></div>
             </div>
@@ -206,10 +228,15 @@ const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, settings: 
     );
 };
 
+// --- MAIN APP ---
+
 const App: React.FC = () => {
-  const [viewState, setViewState] = useState<'loading'|'wizard'|'welcome'|'dashboard'>('loading');
+  const [viewState, setViewState] = useState<'loading'|'auth_check'|'wizard'|'login'|'dashboard'>('loading');
   const [settings, setSettings] = useState<AppSettings|null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [authToken, setAuthToken] = useState<string>(() => localStorage.getItem('imobiflow_auth') || '');
+  const [loginError, setLoginError] = useState('');
+  
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [editingContact, setEditingContact] = useState<Contact|null>(null);
@@ -227,21 +254,123 @@ const App: React.FC = () => {
   const [sending, setSending] = useState(false);
 
   const getServerUrl = () => (localStorage.getItem('imobiflow_server_url') || 'https://followimob.squareweb.app').replace(/\/$/, '');
-  const getHeaders = () => ({ 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' });
+  
+  // Headers Helper: Agora inclui automaticamente o token de autenticação
+  const getHeaders = () => ({ 
+      'Content-Type': 'application/json', 
+      'ngrok-skip-browser-warning': 'true',
+      'x-access-token': authToken
+  });
 
+  // 1. Initial Load: Check if system is configured
   useEffect(() => {
-      fetch(`${getServerUrl()}/settings`,{headers:getHeaders()}).then(r=>r.ok?r.json():null).then(d=>{ if(d){setSettings({...d,serverUrl:getServerUrl()});setViewState('welcome');}else setViewState('wizard'); }).catch(()=>setViewState('wizard'));
+      setViewState('loading');
+      fetch(`${getServerUrl()}/auth-status`, { headers: { 'ngrok-skip-browser-warning': 'true' } })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.configured) {
+                setViewState('wizard');
+            } else {
+                // Configurado, verifica se temos token salvo
+                if (authToken) {
+                   // Tenta pegar settings com o token
+                   fetch(`${getServerUrl()}/settings`, { headers: getHeaders() })
+                      .then(r => {
+                          if (r.ok) return r.json();
+                          throw new Error('Unauthorized');
+                      })
+                      .then(d => {
+                          setSettings({...d, serverUrl: getServerUrl()});
+                          setViewState('dashboard');
+                          fetchContacts();
+                      })
+                      .catch(() => {
+                          // Token inválido ou expirado
+                          setAuthToken('');
+                          localStorage.removeItem('imobiflow_auth');
+                          setViewState('login');
+                      });
+                } else {
+                    setViewState('login');
+                }
+            }
+        })
+        .catch(() => {
+            // Se falhar a conexão, assume wizard ou erro, mas vamos para wizard por segurança de fluxo
+            setViewState('wizard');
+        });
   }, []);
-  const persistSettings = (s:AppSettings) => { setSettings(s); localStorage.setItem('imobiflow_server_url',s.serverUrl!); fetch(`${s.serverUrl}/settings`,{method:'POST',headers:getHeaders(),body:JSON.stringify(s)}); };
+
+  const handleLoginSubmit = async (password: string) => {
+      setLoginError('');
+      try {
+          const res = await fetch(`${getServerUrl()}/login`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+              body: JSON.stringify({ password })
+          });
+          const data = await res.json();
+          if (data.success) {
+              const token = password; // Neste modelo simples, a senha é o token
+              setAuthToken(token);
+              localStorage.setItem('imobiflow_auth', token);
+              
+              // Carregar dados
+              const settingsRes = await fetch(`${getServerUrl()}/settings`, { 
+                  headers: { ...getHeaders(), 'x-access-token': token } 
+              });
+              const settingsData = await settingsRes.json();
+              setSettings({ ...settingsData, serverUrl: getServerUrl() });
+              
+              setViewState('dashboard');
+              // Recarrega página para limpar estados sujos se necessário ou só prossegue
+          } else {
+              setLoginError('Senha incorreta.');
+          }
+      } catch (e) {
+          setLoginError('Erro de conexão com servidor.');
+      }
+  };
+
+  const handleWizardComplete = (s: AppSettings) => {
+      // Salva configurações iniciais (incluindo senha)
+      fetch(`${s.serverUrl}/settings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' },
+          body: JSON.stringify(s)
+      }).then(res => res.json()).then(data => {
+          if (data.success) {
+              // Login automático após setup
+              const token = s.password || '';
+              setAuthToken(token);
+              localStorage.setItem('imobiflow_auth', token);
+              persistSettings(s);
+              setViewState('dashboard');
+              fetchContacts();
+          }
+      });
+  };
+
+  const persistSettings = (s:AppSettings) => { 
+      setSettings(s); 
+      localStorage.setItem('imobiflow_server_url',s.serverUrl!); 
+      fetch(`${s.serverUrl}/settings`,{method:'POST',headers:getHeaders(),body:JSON.stringify(s)}); 
+  };
+
   const fetchContacts = () => fetch(`${settings!.serverUrl}/contacts`,{headers:getHeaders()}).then(r=>r.json()).then(setContacts).catch(()=>{});
   const persistContacts = async (list:Contact[]) => { setContacts(list); await fetch(`${settings!.serverUrl}/contacts`,{method:'POST',headers:getHeaders(),body:JSON.stringify(list)}); };
-  const handleLogin = () => { setViewState('dashboard'); fetchContacts(); };
   
+  const handleLogoutSystem = () => {
+      setAuthToken('');
+      localStorage.removeItem('imobiflow_auth');
+      setViewState('login');
+  };
+
   useEffect(() => { if(toast) setTimeout(()=>setToast(null),3000); }, [toast]);
-  useEffect(() => { if(viewState==='dashboard') { const i=setInterval(()=>{
-      fetch(`${settings!.serverUrl}/status`,{headers:getHeaders()}).then(r=>r.json()).then(d=>setServerStatus(d.isReady)).catch(()=>setServerStatus(false));
+  useEffect(() => { if(viewState==='dashboard' && settings) { const i=setInterval(()=>{
+      fetch(`${settings.serverUrl}/status`,{headers:getHeaders()}).then(r=>r.json()).then(d=>setServerStatus(d.isReady)).catch(()=>setServerStatus(false));
       fetchContacts(); setLastSync(new Date().toLocaleTimeString());
-  },5000); return ()=>clearInterval(i); } }, [viewState]);
+  },5000); return ()=>clearInterval(i); } }, [viewState, settings]);
 
   const toggleAutomation = () => fetch(`${settings!.serverUrl}/toggle-automation`,{method:'POST',headers:getHeaders(),body:JSON.stringify({active:!settings!.automationActive})}).then(()=>setSettings({...settings!,automationActive:!settings!.automationActive}));
 
@@ -268,20 +397,16 @@ const App: React.FC = () => {
       setToast({msg:'Teste disparado (Ciclo Resetado)', type:'success'});
   };
 
-  // Função para fechar o chat e REABRIR O INBOX se necessário
   const handleCloseChat = () => {
       setChatContact(null);
-      // Se ainda houver mensagens não lidas, reabre o inbox para o usuário tomar a ação (Atualizar/Finalizar)
-      if (contacts.some(c => c.hasUnreadReply)) {
-          setIsInboxOpen(true);
-      }
+      if (contacts.some(c => c.hasUnreadReply)) setIsInboxOpen(true);
   };
 
-  const handleLogout = async () => {
+  const handleDisconnectWhatsapp = async () => {
     try {
         await fetch(`${settings!.serverUrl}/logout`, { method: 'POST', headers: getHeaders() });
         setServerStatus(false);
-        setToast({msg: 'Desconectado!', type: 'success'});
+        setToast({msg: 'Desconectado do WhatsApp!', type: 'success'});
     } catch (e) {
         setToast({msg: 'Erro ao desconectar', type: 'error'});
     }
@@ -326,11 +451,9 @@ const App: React.FC = () => {
     setToast({ msg: `${uniqueNew.length} importados`, type: 'success' });
   };
 
-  // Atualizar contato após resposta (abrindo modal para editar obs)
   const handleUpdateContact = (c: Contact) => {
       setEditingContact(c);
       setIsModalOpen(true);
-      // Obs: A notificação só será limpa quando o usuário salvar o modal.
   };
 
   const handleFinalizeContact = async (c: Contact) => {
@@ -339,9 +462,11 @@ const App: React.FC = () => {
     setToast({ msg: 'Contato finalizado', type: 'success' });
   };
 
-  if(viewState==='loading') return <div>Carregando...</div>;
-  if(viewState==='wizard') return <StrategyWizard onComplete={s=>{persistSettings(s);setViewState('dashboard');fetchContacts();}}/>;
-  if(viewState==='welcome') return <div className="min-h-screen bg-slate-900 flex items-center justify-center text-white"><div className="text-center bg-white/10 p-10 rounded-xl"><h1 className="text-2xl font-bold mb-4">Olá, {settings?.agentName}</h1><button onClick={handleLogin} className="bg-blue-600 px-8 py-3 rounded font-bold">Entrar</button></div></div>;
+  // --- RENDER ---
+
+  if(viewState==='loading') return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white"><div className="animate-pulse">Carregando ImobiFlow...</div></div>;
+  if(viewState==='wizard') return <StrategyWizard onComplete={handleWizardComplete}/>;
+  if(viewState==='login') return <LoginScreen onLogin={handleLoginSubmit} error={loginError} />;
 
   const filtered = contacts.filter(c=>filterType==='ALL'||c.type===filterType);
   const unread = contacts.filter(c=>c.hasUnreadReply);
@@ -353,12 +478,16 @@ const App: React.FC = () => {
             <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-4">
                 <div className="text-xs font-bold text-slate-500 uppercase mb-2">Status do Servidor</div>
                 <div className="flex justify-between items-center mb-2"><span>WhatsApp</span>{serverStatus?<span className="text-green-400 text-xs">● Online</span>:<button onClick={()=>setIsQRCodeOpen(true)} className="text-red-400 text-xs">● Conectar</button>}</div>
-                {serverStatus && <button onClick={handleLogout} className="w-full text-xs bg-red-900/50 text-red-200 border border-red-900 rounded py-1 hover:bg-red-900">Desconectar</button>}
+                {serverStatus && <button onClick={handleDisconnectWhatsapp} className="w-full text-xs bg-red-900/50 text-red-200 border border-red-900 rounded py-1 hover:bg-red-900">Desconectar WPP</button>}
             </div>
             <div className={`p-4 rounded-xl border mb-4 ${settings?.automationActive?'bg-indigo-900/40 border-indigo-500':'bg-slate-800'}`}>
                 <div className="flex justify-between items-center"><span className="text-xs font-bold text-slate-300">Automação</span><button onClick={toggleAutomation} className={`w-10 h-5 rounded-full relative ${settings?.automationActive?'bg-indigo-500':'bg-slate-600'}`}><div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${settings?.automationActive?'left-6':'left-1'}`}/></button></div>
             </div>
-            <div className="mt-auto flex flex-col gap-2"><button onClick={()=>setIsSettingsOpen(true)} className="text-sm bg-slate-800 p-2 rounded">⚙️ Ajustes</button><span className="text-xs text-center text-gray-500">Sync: {lastSync}</span></div>
+            <div className="mt-auto flex flex-col gap-2">
+                <button onClick={()=>setIsSettingsOpen(true)} className="text-sm bg-slate-800 p-2 rounded hover:bg-slate-700 text-left">⚙️ Ajustes</button>
+                <button onClick={handleLogoutSystem} className="text-sm bg-red-900/30 text-red-300 p-2 rounded hover:bg-red-900/50 text-left">🚪 Sair do Painel</button>
+                <span className="text-xs text-center text-gray-500 mt-2">Sync: {lastSync}</span>
+            </div>
         </aside>
 
         <main className="flex-1 p-8 overflow-y-auto">
@@ -435,7 +564,7 @@ const App: React.FC = () => {
             {unread.length>0 && <button onClick={()=>setIsInboxOpen(true)} className="fixed bottom-6 right-6 bg-red-600 text-white p-4 rounded-full shadow-xl animate-bounce z-50"><Icons.Message/><span className="absolute -top-1 -right-1 bg-white text-red-600 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold border">{unread.length}</span></button>}
             
             <ContactModal isOpen={isModalOpen} onClose={()=>setIsModalOpen(false)} onSave={handleSaveContact} initialContact={editingContact} settings={settings} defaultType={filterType!=='ALL'?(filterType as ContactType):ContactType.CLIENT}/>
-            <ImportModal isOpen={isImportOpen} onClose={()=>setIsImportOpen(false)} serverUrl={settings?.serverUrl||''} existingContacts={contacts} onImport={handleImportContacts} settings={settings!}/>
+            <ImportModal isOpen={isImportOpen} onClose={()=>setIsImportOpen(false)} serverUrl={settings?.serverUrl||''} existingContacts={contacts} onImport={handleImportContacts} settings={settings!} apiHeaders={getHeaders()}/>
             <QRCodeModal isOpen={isQRCodeOpen} onClose={()=>setIsQRCodeOpen(false)} onConnected={()=>{setServerStatus(true);setIsQRCodeOpen(false)}} serverUrl={settings?.serverUrl} onUrlChange={u=>persistSettings({...settings!,serverUrl:u})}/>
             <SettingsModal isOpen={isSettingsOpen} onClose={()=>setIsSettingsOpen(false)} settings={settings!} onSave={persistSettings}/>
             
@@ -450,13 +579,8 @@ const App: React.FC = () => {
                                     <div className="font-bold">{c.name}</div>
                                     <div className="text-sm my-2 italic text-gray-700">"{c.lastReplyContent||'Nova mensagem'}"</div>
                                     <div className="flex gap-2">
-                                        {/* ABRIR CHAT: Fecha Inbox, Abre Chat. Não marca lido. */}
                                         <button onClick={()=>{setIsInboxOpen(false);setChatContact(c);}} className="flex-1 bg-green-600 text-white py-1 rounded text-xs font-bold" title="Abrir Chat sem marcar como lido">Chat</button>
-                                        
-                                        {/* ATUALIZAR: Fecha Inbox, Abre Edição. Salvar a edição marca como lido. */}
                                         <button onClick={()=>{setIsInboxOpen(false);handleUpdateContact(c);}} className="flex-1 bg-blue-600 text-white py-1 rounded text-xs font-bold" title="Editar obs e atualizar status">Atualizar</button>
-                                        
-                                        {/* FINALIZAR: Confirmação e Exclusão */}
                                         <button onClick={()=>{setIsInboxOpen(false);setConfirmData({show:true,msg:'Finalizar e excluir este contato?',action:()=>handleFinalizeContact(c)})}} className="flex-1 bg-red-600 text-white py-1 rounded text-xs font-bold" title="Excluir contato e remover notificação">Finalizar</button>
                                     </div>
                                 </div>
@@ -466,7 +590,7 @@ const App: React.FC = () => {
                 </div>
             )}
             
-            {chatContact && <ChatModal contact={chatContact} onClose={handleCloseChat} serverUrl={settings?.serverUrl||''} />}
+            {chatContact && <ChatModal contact={chatContact} onClose={handleCloseChat} serverUrl={settings?.serverUrl||''} apiHeaders={getHeaders()} />}
             {confirmData.show && <div className="fixed inset-0 bg-black/60 z-[70] flex items-center justify-center"><div className="bg-white p-6 rounded shadow-xl text-center"><p className="mb-4 font-bold">{confirmData.msg}</p><div className="flex gap-2 justify-center"><button onClick={()=>setConfirmData({show:false})} className="px-4 py-2 bg-gray-200 rounded">Cancelar</button><button onClick={()=>{confirmData.action();setConfirmData({show:false})}} className="px-4 py-2 bg-red-600 text-white rounded font-bold">Sim</button></div></div></div>}
             {toast && <div className={`fixed top-4 right-4 z-[80] px-4 py-2 rounded text-white font-bold ${toast.type==='success'?'bg-green-600':'bg-red-600'}`}>{toast.msg}</div>}
         </main>

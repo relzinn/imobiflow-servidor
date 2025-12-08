@@ -1,3 +1,4 @@
+
 export enum ContactType {
   OWNER = 'Proprietário',
   BUILDER = 'Construtor',
@@ -40,7 +41,7 @@ export interface ChatMessage {
 export interface AppSettings {
   agentName: string;
   agencyName: string;
-  // apiKey removida - agora é gerida no servidor pela equipe
+  password?: string; // Senha de acesso ao sistema
   messageTone: 'Formal' | 'Casual' | 'Persuasivo' | 'Amigável' | 'Consultivo' | 'Urgente' | 'Entusiasta' | 'Elegante';
   defaultFrequencyOwner: number;
   defaultFrequencyBuilder: number;
