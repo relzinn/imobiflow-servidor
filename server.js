@@ -30,15 +30,13 @@ app.use(cors({ origin: '*' }));
 app.use(express.json());
 
 // --- MIDDLEWARE DE COMPILAÇÃO JIT (JUST-IN-TIME) ---
-// Transforma arquivos .tsx/.ts em .js compatível com navegador dinamicamente
 app.get('*', (req, res, next) => {
     if (req.path === '/' || req.path.startsWith('/qr') || req.path.startsWith('/status')) return next();
 
-    // Tenta encontrar o arquivo solicitado
     let filePath = path.join(__dirname, req.path);
     let exists = fs.existsSync(filePath) && fs.statSync(filePath).isFile();
     
-    // Se não achou, tenta extensões .tsx ou .ts
+    // Auto-resolve extensions
     if (!exists) {
         if (fs.existsSync(filePath + '.tsx')) { filePath += '.tsx'; exists = true; }
         else if (fs.existsSync(filePath + '.ts')) { filePath += '.ts'; exists = true; }
@@ -46,26 +44,27 @@ app.get('*', (req, res, next) => {
 
     if (exists && (filePath.endsWith('.tsx') || filePath.endsWith('.ts'))) {
         try {
+            console.log(`🔨 Compilando: ${req.path}`);
             const content = fs.readFileSync(filePath, 'utf8');
-            // Compila TS/JSX para JS moderno
+            // 'classic' runtime assumes React is imported manually (which it is in our files)
+            // This avoids issues with resolving 'react/jsx-runtime' on the client
             const compiled = transform(content, {
                 transforms: ['typescript', 'jsx'],
-                jsxRuntime: 'automatic',
-                production: true
+                jsxRuntime: 'classic', 
+                production: false
             }).code;
 
             res.setHeader('Content-Type', 'application/javascript');
             return res.send(compiled);
         } catch (e) {
-            console.error(`Erro ao compilar ${filePath}:`, e);
-            return res.status(500).send("Erro de compilação");
+            console.error(`❌ Erro ao compilar ${filePath}:`, e);
+            return res.status(500).send(`console.error("Erro de compilação no servidor: ${e.message}")`);
         }
     }
     
     next();
 });
 
-// Serve arquivos estáticos restantes (CSS, imagens, HTML)
 app.use(express.static(__dirname));
 
 console.log(`🔧 Configurando servidor na porta ${PORT}...`);
