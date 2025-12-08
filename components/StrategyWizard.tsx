@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { AppSettings } from '../types';
 
@@ -11,7 +12,7 @@ export const StrategyWizard: React.FC<StrategyWizardProps> = ({ onComplete }) =>
   const [agency, setAgency] = React.useState('');
   const [tone, setTone] = React.useState<AppSettings['messageTone']>('Casual');
   const [days, setDays] = React.useState({ owner: 60, builder: 30, client: 15 });
-  const [serverUrl, setServerUrl] = React.useState('https://ameer-uncondensational-lemuel.ngrok-free.dev');
+  const [serverUrl, setServerUrl] = React.useState('https://followimob.squareweb.app');
 
   const handleFinish = () => {
     onComplete({

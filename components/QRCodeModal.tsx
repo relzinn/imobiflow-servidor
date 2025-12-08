@@ -10,7 +10,7 @@ interface QRCodeModalProps {
   onUrlChange?: (newUrl: string) => void;
 }
 
-export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onConnected, serverUrl = 'https://ameer-uncondensational-lemuel.ngrok-free.dev', onUrlChange }) => {
+export const QRCodeModal: React.FC<QRCodeModalProps> = ({ isOpen, onClose, onConnected, serverUrl = 'https://followimob.squareweb.app', onUrlChange }) => {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [status, setStatus] = useState<'loading' | 'qr' | 'success' | 'error'>('loading');
   const [tempUrl, setTempUrl] = useState(serverUrl);

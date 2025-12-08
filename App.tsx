@@ -195,7 +195,7 @@ const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, settings: 
                     </select>
                 </div>
                 
-                <div className="pt-4 border-t"><h4 className="font-bold text-xs uppercase mb-2">Ciclos Padrão (Dias)</h4><div className="grid grid-cols-3 gap-2">
+                <div className="pt-4 border-t"><h4 className="font-bold text-xs uppercase mb-2">Ciclo Padrão (Dias)</h4><div className="grid grid-cols-3 gap-2">
                     <div><label className="text-[10px]">Prop</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyOwner} onChange={e=>setS({...s,defaultFrequencyOwner:Number(e.target.value)})}/></div>
                     <div><label className="text-[10px]">Const</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyBuilder} onChange={e=>setS({...s,defaultFrequencyBuilder:Number(e.target.value)})}/></div>
                     <div><label className="text-[10px]">Cli</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyClient} onChange={e=>setS({...s,defaultFrequencyClient:Number(e.target.value)})}/></div>
@@ -226,7 +226,7 @@ const App: React.FC = () => {
   const [confirmData, setConfirmData] = useState<any>({show:false});
   const [sending, setSending] = useState(false);
 
-  const getServerUrl = () => (localStorage.getItem('imobiflow_server_url') || 'https://ameer-uncondensational-lemuel.ngrok-free.dev').replace(/\/$/, '');
+  const getServerUrl = () => (localStorage.getItem('imobiflow_server_url') || 'https://followimob.squareweb.app').replace(/\/$/, '');
   const getHeaders = () => ({ 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' });
 
   useEffect(() => {
