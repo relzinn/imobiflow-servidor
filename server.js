@@ -1,3 +1,4 @@
+require('dotenv').config(); // Carrega variáveis de ambiente do arquivo .env
 
 console.log("🚀 Iniciando processo do servidor...");
 
@@ -48,7 +49,7 @@ app.get('*', (req, res, next) => {
 
     if (exists && (filePath.endsWith('.tsx') || filePath.endsWith('.ts'))) {
         try {
-            console.log(`🔨 Compilando: ${req.path}`);
+            // console.log(`🔨 Compilando: ${req.path}`); // Log removido para limpar console
             const content = fs.readFileSync(filePath, 'utf8');
             const compiled = transform(content, {
                 transforms: ['typescript', 'jsx'],
@@ -100,10 +101,8 @@ async function generateAIMessage(contact, settings, stage = 0) {
     const agency = settings.agencyName || "nossa imobiliária";
     const tone = contact.messageTone || settings.messageTone || "Casual";
 
-    // CORREÇÃO: Removida a verificação 'startsWith("AIzaSy...")' que bloqueava chaves reais
-    // Agora verificamos apenas se a chave existe e tem um tamanho mínimo razoável
     if (!TEAM_GEMINI_API_KEY || TEAM_GEMINI_API_KEY.length < 20) {
-        console.warn("⚠️ Chave API inválida ou não configurada no ambiente. Usando Modo Template (Fallback).");
+        console.warn("⚠️ Chave API inválida ou não configurada no ambiente (.env). Usando Modo Template.");
         return generateTemplateFallback(contact, settings, stage);
     }
 
