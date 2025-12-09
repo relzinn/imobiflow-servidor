@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { StrategyWizard } from './components/StrategyWizard';
 import { ContactModal } from './components/ContactModal';
@@ -21,6 +20,13 @@ const getColorFromInitial = (char: string) => {
     const colors = ['bg-red-100 text-red-700', 'bg-blue-100 text-blue-700', 'bg-green-100 text-green-700', 'bg-purple-100 text-purple-700', 'bg-yellow-100 text-yellow-700', 'bg-indigo-100 text-indigo-700', 'bg-pink-100 text-pink-700', 'bg-teal-100 text-teal-700'];
     const index = char.charCodeAt(0) % colors.length;
     return colors[index];
+};
+
+const formatCurrency = (value: string) => {
+    const clean = value.replace(/\D/g, '');
+    if (!clean) return '';
+    const number = parseFloat(clean) / 100;
+    return number.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 };
 
 // --- COMPONENTS ---
@@ -65,11 +71,19 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
     const [isReviewing, setIsReviewing] = useState(false);
     const [currentReviewIndex, setCurrentReviewIndex] = useState(0);
     
+    // Review Fields
     const [reviewName, setReviewName] = useState('');
     const [reviewNotes, setReviewNotes] = useState('');
     const [reviewType, setReviewType] = useState<ContactType>(ContactType.CLIENT);
     const [reviewTone, setReviewTone] = useState('');
     
+    // New Fields for Review
+    const [reviewPropertyAddr, setReviewPropertyAddr] = useState('');
+    const [reviewPropertyValue, setReviewPropertyValue] = useState('');
+    const [reviewHasExchange, setReviewHasExchange] = useState(false);
+    const [reviewExchangeDesc, setReviewExchangeDesc] = useState('');
+    const [reviewExchangeVal, setReviewExchangeVal] = useState('');
+
     const toneOptions = ['Casual', 'Formal', 'Persuasivo', 'Amigável', 'Consultivo', 'Urgente', 'Entusiasta', 'Elegante'];
 
     useEffect(() => {
@@ -106,26 +120,45 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
         setReviewQueue(selectedList);
         setIsReviewing(true);
         setCurrentReviewIndex(0);
-        setReviewName(selectedList[0].name || '');
+        resetReviewFields(selectedList[0]);
+    };
+
+    const resetReviewFields = (contact: any) => {
+        setReviewName(contact.name || '');
         setReviewNotes('');
         setReviewType(targetType); 
         setReviewTone('');
+        setReviewPropertyAddr('');
+        setReviewPropertyValue('');
+        setReviewHasExchange(false);
+        setReviewExchangeDesc('');
+        setReviewExchangeVal('');
     };
 
     const handleNextReview = () => {
         if (!reviewName.trim()) { alert("Nome obrigatório"); return; }
         const current = reviewQueue[currentReviewIndex];
-        const updated = { ...current, name: reviewName, customNotes: reviewNotes, type: reviewType, messageTone: reviewTone || undefined };
+        
+        const updated = { 
+            ...current, 
+            name: reviewName, 
+            customNotes: reviewNotes, 
+            type: reviewType, 
+            messageTone: reviewTone || undefined,
+            propertyAddress: (reviewType === ContactType.OWNER || reviewType === ContactType.BUILDER) ? reviewPropertyAddr : undefined,
+            propertyValue: (reviewType === ContactType.OWNER || reviewType === ContactType.BUILDER) ? reviewPropertyValue : undefined,
+            hasExchange: (reviewType === ContactType.CLIENT) ? reviewHasExchange : undefined,
+            exchangeDescription: (reviewType === ContactType.CLIENT && reviewHasExchange) ? reviewExchangeDesc : undefined,
+            exchangeValue: (reviewType === ContactType.CLIENT && reviewHasExchange) ? reviewExchangeVal : undefined
+        };
+        
         const newList = [...reviewedContacts, updated];
         setReviewedContacts(newList);
 
         if (currentReviewIndex < reviewQueue.length - 1) {
             const nextIndex = currentReviewIndex + 1;
             setCurrentReviewIndex(nextIndex);
-            setReviewName(reviewQueue[nextIndex].name || '');
-            setReviewNotes('');
-            setReviewType(targetType); 
-            setReviewTone('');
+            resetReviewFields(reviewQueue[nextIndex]);
         } else {
             finalizeImport(newList);
         }
@@ -134,7 +167,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
     const finalizeImport = (finalList: any[]) => {
         const newContacts: Contact[] = finalList.map(c => {
             let freq = 30;
-            const t = c.type || targetType;
+            const t = c.type;
             if (t === ContactType.OWNER) freq = settings.defaultFrequencyOwner;
             else if (t === ContactType.BUILDER) freq = settings.defaultFrequencyBuilder;
             else freq = settings.defaultFrequencyClient;
@@ -145,10 +178,22 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
             }
 
             return {
-                id: generateId(), name: c.name, phone: c.phone.startsWith('55') ? c.phone : '55'+c.phone,
-                type: t, notes: c.customNotes || 'Importado via WhatsApp', 
+                id: generateId(), 
+                name: c.name, 
+                phone: c.phone.startsWith('55') ? c.phone : '55'+c.phone,
+                type: t, 
+                notes: c.customNotes || 'Importado via WhatsApp', 
                 lastContactDate: lastDateStr,
-                followUpFrequencyDays: freq, messageTone: c.messageTone, automationStage: AutomationStage.IDLE, autoPilotEnabled: true, hasUnreadReply: false
+                followUpFrequencyDays: freq, 
+                messageTone: c.messageTone, 
+                automationStage: AutomationStage.IDLE, 
+                autoPilotEnabled: true, 
+                hasUnreadReply: false,
+                propertyAddress: c.propertyAddress,
+                propertyValue: c.propertyValue,
+                hasExchange: c.hasExchange,
+                exchangeDescription: c.exchangeDescription,
+                exchangeValue: c.exchangeValue
             };
         });
         onImport(newContacts);
@@ -158,14 +203,40 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
 
     if (!isOpen) return null;
     if (isReviewing) {
+        const isOwner = reviewType === ContactType.OWNER || reviewType === ContactType.BUILDER;
+        const isClient = reviewType === ContactType.CLIENT;
+
         return (
             <div className="fixed inset-0 bg-black/60 z-[95] flex items-center justify-center p-4">
-                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95">
+                <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6 animate-in zoom-in-95 max-h-[90vh] overflow-y-auto">
                     <div className="flex justify-between mb-4"><h3 className="font-bold text-blue-600">Qualificar Contato ({currentReviewIndex + 1}/{reviewQueue.length})</h3><button onClick={onClose} className="font-bold text-xl">✕</button></div>
                     <div className="bg-gray-100 p-2 rounded mb-4 text-center font-mono font-bold">{reviewQueue[currentReviewIndex].phone}</div>
                     <div className="space-y-3">
                         <div><label className="text-xs font-bold uppercase">Nome</label><input className="w-full border p-2 rounded" value={reviewName} onChange={e=>setReviewName(e.target.value)}/></div>
                         <div><label className="text-xs font-bold uppercase">Tipo</label><select className="w-full border p-2 rounded" value={reviewType} onChange={e=>setReviewType(e.target.value as any)}>{Object.values(ContactType).map(t=><option key={t} value={t}>{t}</option>)}</select></div>
+                        
+                        {isOwner && (
+                            <div className="bg-slate-50 p-2 border rounded">
+                                <label className="text-[10px] font-bold uppercase text-blue-600">Dados do Imóvel</label>
+                                <input className="w-full border p-2 rounded text-xs mb-2" placeholder="Endereço/Condomínio" value={reviewPropertyAddr} onChange={e=>setReviewPropertyAddr(e.target.value)}/>
+                                <input className="w-full border p-2 rounded text-xs font-mono text-green-700" placeholder="R$ Valor" value={reviewPropertyValue} onChange={e=>{const v=e.target.value.replace(/\D/g,''); setReviewPropertyValue(formatCurrency(v))}}/>
+                            </div>
+                        )}
+                        {isClient && (
+                            <div className="bg-slate-50 p-2 border rounded">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <input type="checkbox" checked={reviewHasExchange} onChange={e=>setReviewHasExchange(e.target.checked)}/>
+                                    <label className="text-[10px] font-bold uppercase text-blue-600">Tem Permuta?</label>
+                                </div>
+                                {reviewHasExchange && (
+                                    <>
+                                    <input className="w-full border p-2 rounded text-xs mb-2" placeholder="Descrição Permuta" value={reviewExchangeDesc} onChange={e=>setReviewExchangeDesc(e.target.value)}/>
+                                    <input className="w-full border p-2 rounded text-xs font-mono text-green-700" placeholder="R$ Valor" value={reviewExchangeVal} onChange={e=>{const v=e.target.value.replace(/\D/g,''); setReviewExchangeVal(formatCurrency(v))}}/>
+                                    </>
+                                )}
+                            </div>
+                        )}
+
                         <div>
                             <label className="text-xs font-bold uppercase">Tom</label>
                             <select className="w-full border p-2 rounded" value={reviewTone} onChange={e=>setReviewTone(e.target.value)}>
@@ -244,8 +315,6 @@ const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, settings: 
                         <option value="Consultivo">Consultivo</option><option value="Elegante">Elegante</option><option value="Urgente">Urgente</option><option value="Entusiasta">Entusiasta</option>
                     </select>
                 </div>
-                
-                {/* API KEY INPUT REMOVED: Managed by Server Environment now */}
 
                 <div className="pt-4 border-t"><h4 className="font-bold text-xs uppercase mb-2">Ciclo Padrão (Dias)</h4><div className="grid grid-cols-3 gap-2">
                     <div><label className="text-[10px]">Prop</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyOwner} onChange={e => setS({...s, defaultFrequencyOwner: Number(e.target.value)})}/></div>
@@ -284,7 +353,6 @@ const App: React.FC = () => {
   const [confirmData, setConfirmData] = useState<any>({show:false});
   const [sending, setSending] = useState(false);
   
-  // Controle do menu dropdown (kebab) por ID do contato
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   const getServerUrl = () => (localStorage.getItem('imobiflow_server_url') || 'https://followimob.squareweb.app').replace(/\/$/, '');
@@ -355,7 +423,6 @@ const App: React.FC = () => {
   
   const handleLogoutSystem = () => { setAuthToken(''); localStorage.removeItem('imobiflow_auth'); setViewState('login'); };
   const toggleAutomation = () => fetch(`${settings!.serverUrl}/toggle-automation`,{method:'POST',headers:getHeaders(),body:JSON.stringify({active:!settings!.automationActive})}).then(()=>setSettings({...settings!,automationActive:!settings!.automationActive}));
-  const handleResetStage = async (c: Contact) => { const updated = { ...c, automationStage: AutomationStage.IDLE, lastContactDate: new Date().toISOString() }; await persistContacts(contacts.map(x=>x.id===c.id?updated:x)); setToast({msg: 'Ciclo reiniciado!', type: 'success'}); };
   const handleForceTest = async (c: Contact) => { const past = new Date(); past.setDate(past.getDate()- (c.followUpFrequencyDays + 2)); const updated = { ...c, lastContactDate: past.toISOString().split('T')[0], automationStage: AutomationStage.IDLE }; await persistContacts(contacts.map(x=>x.id===c.id?updated:x)); fetch(`${settings!.serverUrl}/trigger-automation`,{headers:getHeaders()}); setToast({msg:'Teste disparado (Ciclo Resetado)', type:'success'}); };
   const handleDisconnectWhatsapp = async () => { try { await fetch(`${settings!.serverUrl}/logout`, { method: 'POST', headers: getHeaders() }); setServerStatus(false); setToast({msg: 'Desconectado do WhatsApp!', type: 'success'}); } catch (e) { setToast({msg: 'Erro ao desconectar', type: 'error'}); } };
   const sendManual = async (c: Contact) => { if (!genMsg.trim()) return; setSending(true); try { await fetch(`${settings!.serverUrl}/send`, { method: 'POST', headers: getHeaders(), body: JSON.stringify({ phone: c.phone, message: genMsg }) }); setToast({ msg: 'Enviado!', type: 'success' }); const updated = { ...c, lastContactDate: new Date().toISOString().split('T')[0], automationStage: AutomationStage.IDLE }; await persistContacts(contacts.map(x => x.id === c.id ? updated : x)); setSelectedId(null); setGenMsg(''); } catch (e) { setToast({ msg: 'Erro ao enviar', type: 'error' }); } finally { setSending(false); } };
@@ -364,24 +431,18 @@ const App: React.FC = () => {
   const handleUpdateContact = (c: Contact) => { setEditingContact(c); setIsModalOpen(true); };
   const handleFinalizeContact = async (c: Contact) => { await persistContacts(contacts.filter(x => x.id !== c.id)); setToast({ msg: 'Contato finalizado', type: 'success' }); };
   
-  // --- DELETE FIX & DUPLICATE VALIDATION ---
-
   const handleDelete = async (id:string) => {
-     // Exclusão direta, sem criar conflito com o modal
      await persistContacts(contacts.filter(c => c.id !== id));
      setToast({msg: 'Contato excluído', type: 'success'});
   };
 
   const handleValidateContact = (contact: Contact): string | null => {
-      // Normaliza para verificar apenas os últimos 8 dígitos (evita problemas com 55 ou DDD)
       const cleanNew = contact.phone.replace(/\D/g, '').slice(-8);
-      
       const duplicate = contacts.find(c => {
-          if (c.id === contact.id) return false; // Não compara com ele mesmo na edição
+          if (c.id === contact.id) return false; 
           const cleanExisting = c.phone.replace(/\D/g, '').slice(-8);
           return cleanExisting === cleanNew;
       });
-
       if (duplicate) {
           return `Este número já pertence a ${duplicate.name}`;
       }
@@ -391,7 +452,6 @@ const App: React.FC = () => {
   useEffect(() => { if(toast) setTimeout(()=>setToast(null),3000); }, [toast]);
   useEffect(() => { if(viewState==='dashboard' && settings) { const i=setInterval(()=>{ fetch(`${settings.serverUrl}/status`,{headers:getHeaders()}).then(r=>r.json()).then(d=>setServerStatus(d.isReady)).catch(()=>setServerStatus(false)); fetchContacts(); setLastSync(new Date().toLocaleTimeString()); },5000); return ()=>clearInterval(i); } }, [viewState, settings]);
 
-  // Click outside listener for kebab menu
   useEffect(() => {
     const handleClickOutside = () => setOpenMenuId(null);
     if(openMenuId) window.addEventListener('click', handleClickOutside);
@@ -402,7 +462,6 @@ const App: React.FC = () => {
   if(viewState==='wizard') return <StrategyWizard onComplete={handleWizardComplete}/>;
   if(viewState==='login') return <LoginScreen onLogin={handleLoginSubmit} onRecover={handleRecoverPassword} error={loginError} />;
 
-  // --- FILTRAGEM ---
   const filtered = contacts.filter(c => {
     const matchesFilter = filterType === 'ALL' || c.type === filterType;
     const term = searchTerm.toLowerCase();
@@ -419,7 +478,6 @@ const App: React.FC = () => {
   return (
     <div className="flex flex-col md:flex-row min-h-screen bg-[#F8F9FA] font-sans text-slate-800">
         
-        {/* SIDEBAR MODERNA */}
         <aside className="bg-[#0F172A] text-slate-400 w-full md:w-64 flex flex-col shrink-0 transition-all">
             <div className="p-6">
                 <div className="flex items-center gap-3 mb-8">
@@ -429,7 +487,6 @@ const App: React.FC = () => {
                     <span className="text-xl font-bold text-white tracking-tight">ImobiFlow</span>
                 </div>
 
-                {/* Status Widget Compacto */}
                 <div className="bg-[#1E293B] rounded-xl p-3 border border-slate-700/50 shadow-sm mb-6 flex items-center justify-between">
                     <div className="flex items-center gap-2">
                         <div className={`w-2.5 h-2.5 rounded-full ${serverStatus ? 'bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'} transition-all`} />
@@ -441,7 +498,6 @@ const App: React.FC = () => {
                     {serverStatus && <button onClick={handleDisconnectWhatsapp} className="text-slate-500 hover:text-red-400"><Icons.Pause/></button>}
                 </div>
 
-                {/* Automação Toggle */}
                 <div className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-800/50 transition-colors mb-6 cursor-pointer" onClick={toggleAutomation}>
                     <span className="text-sm font-medium text-slate-300">Automação IA</span>
                     <div className={`w-9 h-5 rounded-full relative transition-colors ${settings?.automationActive ? 'bg-indigo-500' : 'bg-slate-600'}`}>
@@ -463,9 +519,7 @@ const App: React.FC = () => {
             </div>
         </aside>
 
-        {/* CONTEÚDO PRINCIPAL */}
         <main className="flex-1 h-screen overflow-hidden flex flex-col">
-            {/* Header com Search Global */}
             <header className="px-8 py-6 bg-white border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shrink-0">
                 <div>
                     <h1 className="text-2xl font-bold text-slate-800">Contatos</h1>
@@ -473,7 +527,6 @@ const App: React.FC = () => {
                 </div>
                 
                 <div className="flex flex-1 max-w-2xl w-full gap-4 items-center justify-end">
-                    {/* Search Bar */}
                     <div className="relative w-full max-w-md group">
                         <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-slate-400 group-focus-within:text-blue-500 transition-colors">
                             <Icons.Search />
@@ -496,10 +549,8 @@ const App: React.FC = () => {
                 </div>
             </header>
 
-            {/* Filtros e Lista */}
             <div className="flex-1 overflow-hidden flex flex-col p-8 pt-6">
                 
-                {/* Filter Chips */}
                 <div className="flex gap-2 mb-6 overflow-x-auto pb-2 scrollbar-hide shrink-0">
                     {['ALL', ...Object.values(ContactType)].map(t => {
                         const typeContacts = contacts.filter(c => t === 'ALL' || c.type === t);
@@ -520,7 +571,15 @@ const App: React.FC = () => {
                     })}
                 </div>
 
-                {/* RICH LIST (Cards Layout) */}
+                {/* TABLE HEADER - NEW! */}
+                <div className="hidden md:grid grid-cols-[1.5fr_2fr_1fr_1fr_100px] gap-4 px-4 py-2 text-xs font-bold text-slate-400 uppercase tracking-wider">
+                    <div>Contato</div>
+                    <div>Imóvel / Interesse</div>
+                    <div>Status</div>
+                    <div>Prazos</div>
+                    <div className="text-right">Ações</div>
+                </div>
+
                 <div className="flex-1 overflow-y-auto space-y-3 pr-2 pb-20">
                     {filtered.map(c => {
                         const lastDate = new Date(c.lastContactDate || Date.now());
@@ -530,7 +589,6 @@ const App: React.FC = () => {
                         const isAlert = c.automationStage === 3;
                         const initialColor = getColorFromInitial(c.name);
 
-                        // Cálculo status visual
                         let statusBadge = <span className="bg-slate-100 text-slate-600 px-2.5 py-1 rounded-full text-xs font-bold border border-slate-200">Em dia</span>;
                         if(c.automationStage === 1) statusBadge = <span className="bg-blue-50 text-blue-600 px-2.5 py-1 rounded-full text-xs font-bold border border-blue-100 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-blue-500"/> Aguardando (1)</span>;
                         if(c.automationStage === 2) statusBadge = <span className="bg-purple-50 text-purple-600 px-2.5 py-1 rounded-full text-xs font-bold border border-purple-100 flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-purple-500"/> Aguardando (2)</span>;
@@ -551,53 +609,58 @@ const App: React.FC = () => {
                                     </div>
                                 )}
 
-                                <div className="flex items-center justify-between gap-4">
+                                <div className="grid grid-cols-1 md:grid-cols-[1.5fr_2fr_1fr_1fr_100px] gap-4 items-center">
                                     {/* 1. Identity Section */}
-                                    <div className="flex items-center gap-4 min-w-[200px]">
-                                        <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shadow-sm ${initialColor}`}>
+                                    <div className="flex items-center gap-3">
+                                        <div className={`w-10 h-10 shrink-0 rounded-full flex items-center justify-center text-xs font-bold shadow-sm ${initialColor}`}>
                                             {getInitials(c.name)}
                                         </div>
-                                        <div>
-                                            <h3 className="font-bold text-slate-800 text-sm">{c.name}</h3>
-                                            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{c.type}</p>
-                                            
-                                            {/* NOVOS CAMPOS: VISUALIZAÇÃO NO CARD */}
-                                            {(c.type === ContactType.OWNER || c.type === ContactType.BUILDER) && c.propertyAddress && (
-                                                <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded inline-block border border-slate-100">
-                                                    🏠 {c.propertyAddress} {c.propertyValue && <span className="text-green-600 font-bold">({c.propertyValue})</span>}
-                                                </div>
-                                            )}
-                                            {c.type === ContactType.CLIENT && c.hasExchange && (
-                                                <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded inline-block border border-blue-100">
-                                                    🔄 Permuta: {c.exchangeDescription} {c.exchangeValue && <span className="font-bold">({c.exchangeValue})</span>}
-                                                </div>
-                                            )}
-
+                                        <div className="overflow-hidden">
+                                            <h3 className="font-bold text-slate-800 text-sm truncate">{c.name}</h3>
+                                            <p className="text-[10px] font-medium text-slate-400 uppercase tracking-wide truncate">{c.type}</p>
                                         </div>
                                     </div>
 
-                                    {/* 2. Status Badge */}
-                                    <div className="hidden md:flex items-center min-w-[120px]">
+                                    {/* 2. Property / Interest Column (MAIN CHANGE) */}
+                                    <div className="text-sm">
+                                        {(c.type === ContactType.OWNER || c.type === ContactType.BUILDER) ? (
+                                            c.propertyAddress ? (
+                                                <div className="flex flex-col">
+                                                    <span className="font-medium text-slate-700 truncate">🏠 {c.propertyAddress}</span>
+                                                    {c.propertyValue && <span className="text-[11px] text-green-600 font-bold font-mono">{c.propertyValue}</span>}
+                                                </div>
+                                            ) : <span className="text-slate-300 italic text-xs">Sem dados do imóvel</span>
+                                        ) : (
+                                            c.hasExchange ? (
+                                                <div className="flex flex-col">
+                                                    <span className="font-medium text-blue-700 truncate">🔄 Permuta: {c.exchangeDescription}</span>
+                                                    {c.exchangeValue && <span className="text-[11px] text-green-600 font-bold font-mono">{c.exchangeValue}</span>}
+                                                </div>
+                                            ) : <span className="text-slate-300 italic text-xs">Sem permuta</span>
+                                        )}
+                                    </div>
+
+                                    {/* 3. Status Badge */}
+                                    <div className="flex items-center">
                                         {c.hasUnreadReply ? (
                                             <span className="bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1 shadow-sm"><Icons.Bell/> Nova msg</span>
                                         ) : statusBadge}
                                     </div>
 
-                                    {/* 3. Dates/Metrics */}
-                                    <div className="hidden lg:flex flex-col gap-1 text-[11px] text-slate-500 min-w-[140px]">
+                                    {/* 4. Dates/Metrics */}
+                                    <div className="flex flex-col gap-1 text-[11px] text-slate-500">
                                         <div className="flex items-center gap-1.5">
                                             <Icons.Clock />
-                                            <span className={daysWait > c.followUpFrequencyDays ? 'text-red-500 font-bold' : ''}>Último: {daysWait} dias</span>
+                                            <span className={daysWait > c.followUpFrequencyDays ? 'text-red-500 font-bold' : ''}>{daysWait} dias</span>
                                         </div>
                                         <div className="flex items-center gap-1.5 opacity-70">
                                             <Icons.Calendar />
-                                            <span>Próx: {nextDate.toLocaleDateString('pt-BR').slice(0,5)}</span>
+                                            <span>{nextDate.toLocaleDateString('pt-BR').slice(0,5)}</span>
                                         </div>
                                     </div>
 
-                                    {/* 4. Actions (Primary & Secondary) */}
-                                    <div className="flex items-center gap-2 ml-auto">
-                                        {/* Toggle Auto */}
+                                    {/* 5. Actions */}
+                                    <div className="flex items-center justify-end gap-2">
                                         <button 
                                             onClick={() => persistContacts(contacts.map(x => x.id === c.id ? { ...x, autoPilotEnabled: !c.autoPilotEnabled } : x))}
                                             className={`w-8 h-8 rounded-full flex items-center justify-center transition-all ${c.autoPilotEnabled !== false ? 'bg-green-50 text-green-600 hover:bg-green-100' : 'bg-slate-50 text-slate-400 hover:bg-slate-100'}`}
@@ -605,12 +668,7 @@ const App: React.FC = () => {
                                         >
                                             {c.autoPilotEnabled !== false ? <span className="text-xs">ON</span> : <span className="text-[10px]">OFF</span>}
                                         </button>
-
-                                        {/* Primary Actions */}
-                                        <button onClick={() => setChatContact(c)} className="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100 hover:scale-110 transition-all shadow-sm" title="Abrir Chat"><Icons.WhatsApp/></button>
-                                        <button onClick={() => { setSelectedId(c.id); generateFollowUpMessage(c, settings!, false).then(setGenMsg); }} className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center hover:bg-indigo-100 hover:scale-110 transition-all shadow-sm" title="Gerar Msg"><Icons.Flash/></button>
-
-                                        {/* Kebab Menu (Dropdown) */}
+                                        
                                         <div className="relative">
                                             <button 
                                                 onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === c.id ? null : c.id); }}
@@ -621,6 +679,9 @@ const App: React.FC = () => {
                                             
                                             {openMenuId === c.id && (
                                                 <div className="absolute right-0 top-10 w-48 bg-white rounded-lg shadow-xl border border-slate-100 z-50 py-1 text-sm animate-in fade-in zoom-in-95" onClick={e => e.stopPropagation()}>
+                                                    <button onClick={() => { setChatContact(c); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-2"><Icons.WhatsApp /> Abrir Chat</button>
+                                                    <button onClick={() => { setSelectedId(c.id); generateFollowUpMessage(c, settings!, false).then(setGenMsg); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-2"><Icons.Flash /> Gerar Msg</button>
+                                                    <div className="h-px bg-slate-100 my-1" />
                                                     <button onClick={() => { handleUpdateContact(c); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-2"><Icons.Pencil /> Editar</button>
                                                     <button onClick={() => { handleForceTest(c); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-slate-50 text-slate-700 font-medium flex items-center gap-2"><Icons.Refresh /> Resetar Ciclo</button>
                                                     <div className="h-px bg-slate-100 my-1" />
@@ -629,7 +690,7 @@ const App: React.FC = () => {
                                                             setConfirmData({
                                                                 show: true, 
                                                                 msg: 'Excluir contato permanentemente?', 
-                                                                action: () => handleDelete(c.id) // AGORA CHAMA A FUNÇÃO CORRETA
+                                                                action: () => handleDelete(c.id)
                                                             }); 
                                                             setOpenMenuId(null); 
                                                         }} 
@@ -659,12 +720,11 @@ const App: React.FC = () => {
                 </button>
             )}
 
-            {/* MODALS */}
             <ContactModal 
                 isOpen={isModalOpen} 
                 onClose={()=>setIsModalOpen(false)} 
                 onSave={handleSaveContact} 
-                onValidate={handleValidateContact} // PASSA VALIDAÇÃO
+                onValidate={handleValidateContact} 
                 initialContact={editingContact} 
                 settings={settings} 
                 defaultType={filterType!=='ALL'?(filterType as ContactType):ContactType.CLIENT}

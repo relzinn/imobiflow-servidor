@@ -39,7 +39,6 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       setFrequencyDays(initialContact.followUpFrequencyDays);
       setMessageTone(initialContact.messageTone || '');
       
-      // Carregar novos campos
       setPropertyAddress(initialContact.propertyAddress || '');
       setPropertyValue(initialContact.propertyValue || '');
       setHasExchange(initialContact.hasExchange || false);
@@ -79,9 +78,15 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       return clean;
   };
 
-  const formatCurrency = (val: string) => {
-      // Simples formatador visual, mantém o valor como string livre
-      return val; 
+  const formatCurrency = (value: string) => {
+      const clean = value.replace(/\D/g, '');
+      if (!clean) return '';
+      const number = parseFloat(clean) / 100;
+      return number.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  };
+
+  const handleCurrencyChange = (setter: (val: string) => void, value: string) => {
+      setter(formatCurrency(value));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -107,7 +112,6 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       lastReplyTimestamp: initialContact?.lastReplyTimestamp,
       hasUnreadReply: false,
       
-      // Novos campos
       propertyAddress: (type === ContactType.OWNER || type === ContactType.BUILDER) ? propertyAddress : undefined,
       propertyValue: (type === ContactType.OWNER || type === ContactType.BUILDER) ? propertyValue : undefined,
       hasExchange: (type === ContactType.CLIENT) ? hasExchange : undefined,
@@ -180,8 +184,13 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
                     <input className="w-full border rounded p-2 text-sm" placeholder="Ex: Rua das Flores, 123 - Ed. Solar" value={propertyAddress} onChange={e => setPropertyAddress(e.target.value)} />
                 </div>
                 <div>
-                    <label className="block text-[10px] font-bold text-gray-500 mb-1">Valor Pretendido (R$)</label>
-                    <input className="w-full border rounded p-2 text-sm" placeholder="Ex: 500.000,00" value={propertyValue} onChange={e => setPropertyValue(e.target.value)} />
+                    <label className="block text-[10px] font-bold text-gray-500 mb-1">Valor Pretendido</label>
+                    <input 
+                        className="w-full border rounded p-2 text-sm font-mono text-green-700" 
+                        placeholder="R$ 0,00" 
+                        value={propertyValue} 
+                        onChange={e => handleCurrencyChange(setPropertyValue, e.target.value)} 
+                    />
                 </div>
             </div>
           )}
@@ -201,8 +210,13 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
                             <input className="w-full border rounded p-2 text-sm" placeholder="Ex: Apto 2 dorms no Centro" value={exchangeDescription} onChange={e => setExchangeDescription(e.target.value)} />
                         </div>
                         <div>
-                            <label className="block text-[10px] font-bold text-gray-500 mb-1">Valor da Permuta (R$)</label>
-                            <input className="w-full border rounded p-2 text-sm" placeholder="Ex: 350.000,00" value={exchangeValue} onChange={e => setExchangeValue(e.target.value)} />
+                            <label className="block text-[10px] font-bold text-gray-500 mb-1">Valor da Permuta</label>
+                            <input 
+                                className="w-full border rounded p-2 text-sm font-mono text-green-700" 
+                                placeholder="R$ 0,00" 
+                                value={exchangeValue} 
+                                onChange={e => handleCurrencyChange(setExchangeValue, e.target.value)} 
+                            />
                         </div>
                     </div>
                 )}
