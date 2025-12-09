@@ -4,15 +4,21 @@ require('dotenv').config(); // Carrega variáveis de ambiente do arquivo .env
 console.log("🚀 Iniciando processo do servidor...");
 
 // --- VALIDAÇÃO DE API KEY ---
-const API_KEY = process.env.API_KEY;
+// VOCÊ PODE COLOCAR SUA CHAVE ABAIXO ONDE DIZ "COLE_SUA_CHAVE_AQUI..." SE NÃO QUISER USAR O ARQUIVO .ENV
+const API_KEY = process.env.API_KEY || "COLE_SUA_CHAVE_AQUI_DENTRO_DAS_ASPAS";
 
-if (API_KEY) {
+// Atualizando a variável de ambiente para garantir que a IA a encontre
+process.env.API_KEY = API_KEY;
+
+if (API_KEY && API_KEY !== "COLE_SUA_CHAVE_AQUI_DENTRO_DAS_ASPAS") {
     console.log(`✅ API KEY DETECTADA: ${API_KEY.substring(0, 6)}...****** (Comprimento: ${API_KEY.length})`);
     if (API_KEY.length < 20) {
         console.warn("⚠️ AVISO: A API Key parece muito curta. Verifique se está correta.");
     }
 } else {
-    console.error("❌ ERRO CRÍTICO: API_KEY NÃO ENCONTRADA NAS VARIÁVEIS DE AMBIENTE (.env)");
+    console.error("❌ ERRO CRÍTICO: API_KEY NÃO ENCONTRADA.");
+    console.error("👉 SOLUÇÃO 1: Crie um arquivo chamado '.env' e coloque: API_KEY=sua_chave_google");
+    console.error("👉 SOLUÇÃO 2: Edite o arquivo server.js e cole a chave na variável API_KEY nas primeiras linhas.");
 }
 // ----------------------------
 
@@ -113,11 +119,11 @@ async function generateAIMessage(contact, settings, stage = 0) {
     const agency = settings.agencyName || "nossa imobiliária";
     const tone = contact.messageTone || settings.messageTone || "Casual";
 
-    // 🚀 LÓGICA RÍGIDA: SÓ USA A CHAVE DO AMBIENTE
+    // 🚀 LÓGICA RÍGIDA: SÓ USA A CHAVE DO AMBIENTE (OU A COLADA NO TOPO DO ARQUIVO)
     const effectiveApiKey = process.env.API_KEY;
 
-    if (!effectiveApiKey) {
-        console.error("❌ FALHA AO GERAR MENSAGEM: API_KEY não encontrada no processo do servidor.");
+    if (!effectiveApiKey || effectiveApiKey === "COLE_SUA_CHAVE_AQUI_DENTRO_DAS_ASPAS") {
+        console.error("❌ FALHA AO GERAR MENSAGEM: API_KEY não configurada corretamente.");
         return generateTemplateFallback(contact, settings, stage);
     }
 
