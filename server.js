@@ -1,26 +1,28 @@
 
 require('dotenv').config(); // Carrega variáveis de ambiente do arquivo .env
 
+// ==================================================================================
+// 🚨 ÁREA DE CONFIGURAÇÃO RÁPIDA (PARA CORRIGIR ERRO DE CHAVE) 🚨
+// ==================================================================================
+// Se você não estiver conseguindo usar o arquivo .env, COLE SUA CHAVE ABAIXO:
+const CHAVE_FIXA = ""; // <--- COLE SUA CHAVE AQUI DENTRO (Começa com AIzaSy...)
+// ==================================================================================
+
 console.log("🚀 Iniciando processo do servidor...");
 
-// --- VALIDAÇÃO DE API KEY ---
-// VOCÊ PODE COLOCAR SUA CHAVE ABAIXO ONDE DIZ "COLE_SUA_CHAVE_AQUI..." SE NÃO QUISER USAR O ARQUIVO .ENV
-const API_KEY = process.env.API_KEY || "COLE_SUA_CHAVE_AQUI_DENTRO_DAS_ASPAS";
+// Define a chave final (Prioridade: Chave Fixa > Variável de Ambiente)
+const API_KEY = CHAVE_FIXA || process.env.API_KEY;
 
-// Atualizando a variável de ambiente para garantir que a IA a encontre
+// Garante que o processo tenha acesso à chave
 process.env.API_KEY = API_KEY;
 
-if (API_KEY && API_KEY !== "COLE_SUA_CHAVE_AQUI_DENTRO_DAS_ASPAS") {
-    console.log(`✅ API KEY DETECTADA: ${API_KEY.substring(0, 6)}...****** (Comprimento: ${API_KEY.length})`);
-    if (API_KEY.length < 20) {
-        console.warn("⚠️ AVISO: A API Key parece muito curta. Verifique se está correta.");
-    }
+// Validação visual no log
+if (API_KEY && API_KEY.length > 20) {
+    console.log(`✅ API KEY CARREGADA: ${API_KEY.substring(0, 6)}...******`);
 } else {
-    console.error("❌ ERRO CRÍTICO: API_KEY NÃO ENCONTRADA.");
-    console.error("👉 SOLUÇÃO 1: Crie um arquivo chamado '.env' e coloque: API_KEY=sua_chave_google");
-    console.error("👉 SOLUÇÃO 2: Edite o arquivo server.js e cole a chave na variável API_KEY nas primeiras linhas.");
+    console.error("❌ AVISO CRÍTICO: NENHUMA API KEY ENCONTRADA.");
+    console.error("👉 Edite o arquivo server.js e cole sua chave na variável 'CHAVE_FIXA' nas primeiras linhas.");
 }
-// ----------------------------
 
 try {
     require.resolve('express');
@@ -51,14 +53,11 @@ app.use(express.json());
 
 // --- MIDDLEWARE DE COMPILAÇÃO JIT (JUST-IN-TIME) ---
 app.get('*', (req, res, next) => {
-    // Pula arquivos estáticos comuns ou rotas de API
     if (req.path.startsWith('/api/') || req.path === '/qr' || req.path === '/status' || req.path === '/auth-status' || req.path === '/login') return next();
     
-    // Verifica se é arquivo TSX/TS
     let filePath = path.join(__dirname, req.path);
     if (req.path === '/') filePath = path.join(__dirname, 'index.html');
     
-    // Se for requisição de arquivo que não existe, tenta adicionar extensão
     let exists = fs.existsSync(filePath) && fs.statSync(filePath).isFile();
     if (!exists && !req.path.includes('.')) {
          if (fs.existsSync(filePath + '.tsx')) { filePath += '.tsx'; exists = true; }
@@ -67,7 +66,6 @@ app.get('*', (req, res, next) => {
 
     if (exists && (filePath.endsWith('.tsx') || filePath.endsWith('.ts'))) {
         try {
-            // console.log(`🔨 Compilando: ${req.path}`); // Log removido para limpar console
             const content = fs.readFileSync(filePath, 'utf8');
             const compiled = transform(content, {
                 transforms: ['typescript', 'jsx'],
@@ -82,7 +80,6 @@ app.get('*', (req, res, next) => {
             return res.status(500).send(`console.error("Erro de compilação no servidor: ${e.message}")`);
         }
     }
-    
     next();
 });
 
@@ -90,20 +87,14 @@ app.use(express.static(__dirname));
 
 // --- MIDDLEWARE DE AUTENTICAÇÃO ---
 const authMiddleware = (req, res, next) => {
-    // Rotas públicas
     const publicRoutes = ['/status', '/qr', '/auth-status', '/login', '/logout', '/'];
     if (publicRoutes.includes(req.path)) return next();
 
     const settings = getSettings();
     const token = req.headers['x-access-token'];
 
-    // Se não tem senha configurada (setup inicial), permite
     if (!settings.password) return next();
-
-    // Se tem senha, valida
-    if (token === settings.password) {
-        return next();
-    }
+    if (token === settings.password) return next();
 
     return res.status(401).json({ error: 'Unauthorized' });
 };
@@ -116,93 +107,86 @@ console.log(`🔧 Configurando servidor na porta ${PORT}...`);
 
 async function generateAIMessage(contact, settings, stage = 0) {
     const agent = settings.agentName || "Seu Corretor";
-    const agency = settings.agencyName || "nossa imobiliária";
+    const agency = settings.agencyName || "Imobiliária";
     const tone = contact.messageTone || settings.messageTone || "Casual";
 
-    // 🚀 LÓGICA RÍGIDA: SÓ USA A CHAVE DO AMBIENTE (OU A COLADA NO TOPO DO ARQUIVO)
-    const effectiveApiKey = process.env.API_KEY;
-
-    if (!effectiveApiKey || effectiveApiKey === "COLE_SUA_CHAVE_AQUI_DENTRO_DAS_ASPAS") {
-        console.error("❌ FALHA AO GERAR MENSAGEM: API_KEY não configurada corretamente.");
+    if (!API_KEY || API_KEY.length < 10) {
+        console.error("❌ ERRO IA: Chave de API inválida ou ausente.");
         return generateTemplateFallback(contact, settings, stage);
     }
 
-    console.log(`🤖 IA Iniciada para ${contact.name}. Usando chave: ${effectiveApiKey.substring(0,5)}...`);
+    console.log(`🤖 SOLICITANDO IA PARA: ${contact.name} | TIPO: ${contact.type}`);
 
     try {
-        const ai = new GoogleGenAI({ apiKey: effectiveApiKey });
-        const modelId = "gemini-2.5-flash";
+        const ai = new GoogleGenAI({ apiKey: API_KEY });
+        const modelId = "gemini-2.5-flash"; // Modelo rápido e eficiente
 
-        const internalNotes = contact.notes ? `OBSERVAÇÃO/MOTIVO REAL DO CONTATO: "${contact.notes}"` : "Sem observações específicas (apenas acompanhamento de rotina).";
+        const internalNotes = contact.notes ? `MOTIVO DO CONTATO (OBSERVAÇÃO REAL): "${contact.notes}"` : "Sem observações específicas (apenas follow-up de rotina).";
 
-        let stageInstruction = "";
-        if (stage === 1) { // Cobrança
-            stageInstruction = "O cliente não respondeu a mensagem anterior. Seja breve e pergunte educadamente se ainda há interesse.";
-        } else if (stage === 99) { // Despedida
-            stageInstruction = "Despedida final. Agradeça e encerre o ciclo de contato de forma profissional.";
-        } else {
-            stageInstruction = "Retomada de contato padrão (Follow-up).";
-        }
+        let context = "Retomada de contato.";
+        if (stage === 1) context = "Cobrança amigável (sem resposta anterior).";
+        if (stage === 99) context = "Despedida profissional.";
 
         const prompt = `
-          ATUE COMO: ${agent}, da ${agency}.
-          TAREFA: Escrever uma mensagem de WhatsApp para o cliente ${contact.name}.
+          Você é ${agent}, corretor da ${agency}.
+          Escreva uma mensagem de WhatsApp CURTA e DIRETA para ${contact.name} (${contact.type}).
           
-          DADOS:
-          - Tipo de Cliente: ${contact.type}
-          - ${internalNotes}
-          - Contexto: ${stageInstruction}
+          DADOS REAIS DO CLIENTE:
+          ${internalNotes}
           
-          REGRAS RIGOROSAS (NÃO QUEBRE):
-          1. SEJA OBJETIVO: Sua meta é ter uma resposta, não contar uma história. Evite textos longos.
-          2. USE A OBSERVAÇÃO: A "OBSERVAÇÃO" acima é a única verdade. Use-a para guiar o assunto.
-          3. SEM ALUCINAÇÕES: NÃO INVENTE que "apareceu um cliente", "surgiu uma oportunidade" ou "lembrei de você por acaso" a menos que a observação diga isso explicitamente.
-          4. SEM PARÊNTESES: Nunca coloque o contexto entre parênteses. Integre no texto.
-          5. TOM DE VOZ: ${tone}. Mantenha-se focado e profissional.
+          CONTEXTO: ${context}
           
-          Exemplo de estrutura desejada:
-          "Olá [Nome], aqui é [Agente]. [Motivo direto baseado na observação]. [Pergunta para avançar]?"
+          DIRETRIZES:
+          1. Use o tom "${tone}".
+          2. Comece com "Olá ${contact.name.split(' ')[0]}..." ou similar.
+          3. IMPORTANTE: Use a informação da "MOTIVO DO CONTATO" para criar a pergunta.
+          4. Se a observação diz "quer apto 3 quartos", pergunte sobre isso. Se diz "tem imóvel na rua X", fale disso.
+          5. NÃO INVENTE DADOS. Se não houver observação, seja genérico: "Gostaria de saber se ainda busca imóveis/venda".
+          6. MÁXIMO 2 ou 3 FRASES. Nada de textos longos.
         `;
 
         const response = await ai.models.generateContent({
             model: modelId,
             contents: prompt,
             config: {
-                temperature: 0.3, // Baixa criatividade para evitar alucinações
-                topP: 0.8,
-                topK: 40
+                temperature: 0.4, // Um pouco de criatividade, mas controlada
+                maxOutputTokens: 200,
             }
         });
         
         const generatedText = response.text.trim();
-        console.log("✨ Mensagem gerada com sucesso pela IA.");
-        return generatedText;
+        
+        // Validação simples para ver se a IA devolveu algo útil
+        if (generatedText.length > 5) {
+            console.log("✨ IA Gerou:", generatedText.substring(0, 50) + "...");
+            return generatedText;
+        } else {
+            throw new Error("Resposta da IA vazia ou muito curta.");
+        }
 
     } catch (error) {
-        console.error("❌ ERRO NA CHAMADA DA IA (GOOGLE GEMINI):", error.message);
-        if (error.response) console.error("Detalhes:", JSON.stringify(error.response));
+        console.error("❌ FALHA NA GERAÇÃO IA:");
+        if (error.message.includes("403")) console.error("ERRO 403: Chave de API Inválida ou Expirada.");
+        else if (error.message.includes("404")) console.error("ERRO 404: Modelo 'gemini-2.5-flash' não encontrado ou sem acesso.");
+        else console.error(error.message);
+        
         return generateTemplateFallback(contact, settings, stage);
     }
 }
 
 function generateTemplateFallback(contact, settings, stage = 0) {
-    console.warn("⚠️ Usando fallback (template) para mensagem.");
-    const agent = settings.agentName || "Seu Corretor";
+    console.warn("⚠️ Usando Template Padrão (Fallback).");
+    const agent = settings.agentName || "Corretor";
     
-    if (stage === 99) {
-        return `Olá ${contact.name}, como não tivemos retorno, vou encerrar nosso contato por aqui para não incomodar. Se precisar de algo no futuro, estou à disposição!`;
-    }
+    if (stage === 99) return `Olá ${contact.name}, encerro nosso contato por enquanto. Se precisar, estou à disposição!`;
+    if (stage === 1) return `Olá ${contact.name}, conseguiu ver minha mensagem anterior?`;
 
-    if (stage === 1) { // Cobrança
-        return `Olá ${contact.name}, conseguiu ver minha mensagem anterior? Gostaria apenas de confirmar se ainda tem interesse.`;
-    }
-
-    let specificPart = "continuamos com o assunto";
-    if (contact.type === 'Proprietário') specificPart = "seu imóvel ainda está disponível";
-    if (contact.type === 'Construtor') specificPart = "temos novas oportunidades de áreas";
-    if (contact.type === 'Cliente/Comprador') specificPart = "encontrei opções no seu perfil";
+    let subject = "continuamos com o assunto";
+    if (contact.type === 'Proprietário') subject = "seu imóvel ainda está disponível";
+    if (contact.type === 'Construtor') subject = "temos novas oportunidades";
+    if (contact.type === 'Cliente/Comprador') subject = "ainda busca opções no seu perfil";
     
-    return `Olá ${contact.name}, aqui é ${agent}. Passando para saber se ${specificPart}. Podemos falar?`;
+    return `Olá ${contact.name}, aqui é ${agent}. Passando para saber se ${subject}. Podemos falar?`;
 }
 
 // --- FUNÇÕES AUXILIARES ---
@@ -247,56 +231,26 @@ const client = new Client({
     authStrategy: new LocalAuth({ clientId: "imobiflow-crm-v2" }),
     puppeteer: { 
         headless: true, 
-        args: [
-            '--no-sandbox', 
-            '--disable-setuid-sandbox', 
-            '--disable-dev-shm-usage', 
-            '--disable-accelerated-2d-canvas', 
-            '--no-first-run', 
-            '--no-zygote', 
-            '--single-process', 
-            '--disable-gpu'
-        ] 
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-accelerated-2d-canvas', '--no-first-run', '--no-zygote', '--single-process', '--disable-gpu'] 
     }
 });
 
 client.on('qr', (qr) => { 
     if (qr === lastQrCode) return;
     lastQrCode = qr;
-    console.log("🔹 Novo QR Code gerado (escaneie para conectar):");
+    console.log("🔹 Novo QR Code gerado.");
     qrcodeTerminal.generate(qr, { small: true }); 
-    qrcode.toDataURL(qr, (err, url) => { 
-        if (!err) { 
-            qrCodeData = url; 
-            clientStatus = 'qr_ready'; 
-        } 
-    }); 
+    qrcode.toDataURL(qr, (err, url) => { if (!err) { qrCodeData = url; clientStatus = 'qr_ready'; } }); 
 });
 
-client.on('ready', () => { 
-    console.log('✅ WhatsApp Conectado e Pronto!'); 
-    isReady = true; 
-    clientStatus = 'ready'; 
-    qrCodeData = null; 
-});
-
-client.on('authenticated', () => { 
-    console.log('🔑 Sessão autenticada!'); 
-    clientStatus = 'authenticated'; 
-});
-
-client.on('auth_failure', (msg) => {
-    console.error('❌ Falha na autenticação', msg);
-    clientStatus = 'error';
-});
-
-client.on('disconnected', async (reason) => { 
-    console.log('⚠️ WhatsApp desconectado:', reason);
-    isReady = false; 
-    clientStatus = 'disconnected'; 
+client.on('ready', () => { console.log('✅ WhatsApp Pronto!'); isReady = true; clientStatus = 'ready'; qrCodeData = null; });
+client.on('authenticated', () => { console.log('🔑 Autenticado!'); clientStatus = 'authenticated'; });
+client.on('auth_failure', () => clientStatus = 'error');
+client.on('disconnected', async () => { 
+    console.log('⚠️ Desconectado. Reconectando...'); 
+    isReady = false; clientStatus = 'disconnected'; 
     try { await client.destroy(); } catch(e){} 
-    console.log('🔄 Tentando reconectar em 5s...');
-    setTimeout(() => client.initialize().catch(err => console.error("Erro na reconexão:", err)), 5000); 
+    setTimeout(() => client.initialize(), 5000); 
 });
 
 client.on('message', async msg => {
@@ -306,7 +260,6 @@ client.on('message', async msg => {
     let updated = false;
     for (let c of contacts) {
         if (isSamePhone(c.phone, fromNumber)) {
-            console.log(`🔔 Resposta recebida de ${c.name}`);
             c.hasUnreadReply = true;
             c.lastReplyContent = msg.body;
             c.lastReplyTimestamp = Date.now();
@@ -325,57 +278,38 @@ async function runAutomationCycle() {
     const settings = getSettings();
     if (!settings.automationActive) return;
 
-    console.log("🔄 Verificando automação...");
     const contacts = getContacts();
     let changed = false;
     const now = Date.now();
 
     for (let c of contacts) {
-        if (c.autoPilotEnabled === false) continue;
-        if (c.hasUnreadReply) continue;
+        if (c.autoPilotEnabled === false || c.hasUnreadReply) continue;
         
+        let shouldSend = false;
+        let stageToSend = 0;
+
         if (c.automationStage === 0) {
             const lastDate = new Date(c.lastContactDate || now).getTime();
             const freqDays = c.followUpFrequencyDays || 30;
-            const diffDays = (now - lastDate) / (1000 * 60 * 60 * 24);
-            
-            if (diffDays >= freqDays) {
-                console.log(`⚡ Enviando MSG 1 para ${c.name}`);
-                const msg = await generateAIMessage(c, settings, 0);
-                if (await sendWpp(c.phone, msg)) {
-                    c.automationStage = 1;
-                    c.lastAutomatedMsgDate = new Date().toISOString();
-                    c.lastContactDate = new Date().toISOString();
-                    changed = true;
-                }
-            }
-        }
-        else if (c.automationStage === 1) {
+            if ((now - lastDate) / (86400000) >= freqDays) { shouldSend = true; stageToSend = 0; }
+        } else if (c.automationStage === 1) {
             const lastAuto = new Date(c.lastAutomatedMsgDate).getTime();
-            const diffDays = (now - lastAuto) / (1000 * 60 * 60 * 24);
-            
-            if (diffDays >= 2) {
-                console.log(`⚡ Enviando MSG 2 (Cobrança) para ${c.name}`);
-                const msg = await generateAIMessage(c, settings, 1);
-                if (await sendWpp(c.phone, msg)) {
-                    c.automationStage = 2;
-                    c.lastAutomatedMsgDate = new Date().toISOString();
-                    changed = true;
-                }
-            }
-        }
-        else if (c.automationStage === 2) {
+            if ((now - lastAuto) / (86400000) >= 2) { shouldSend = true; stageToSend = 1; }
+        } else if (c.automationStage === 2) {
              const lastAuto = new Date(c.lastAutomatedMsgDate).getTime();
-             const diffDays = (now - lastAuto) / (1000 * 60 * 60 * 24);
-             
-             if (diffDays >= 1) {
-                 console.log(`⚠️ ${c.name}: Sem retorno. Marcando ALERTA.`);
-                 c.automationStage = 3; 
-                 changed = true;
-             }
+             if ((now - lastAuto) / (86400000) >= 1) { c.automationStage = 3; changed = true; }
+        }
+
+        if (shouldSend) {
+            const msg = await generateAIMessage(c, settings, stageToSend);
+            if (await sendWpp(c.phone, msg)) {
+                c.automationStage = stageToSend + 1;
+                c.lastAutomatedMsgDate = new Date().toISOString();
+                c.lastContactDate = new Date().toISOString();
+                changed = true;
+            }
         }
     }
-
     if (changed) saveContacts(contacts);
 }
 
@@ -385,30 +319,18 @@ async function sendWpp(phone, msg) {
         const numberId = await client.getNumberId(chatId);
         await client.sendMessage(numberId ? numberId._serialized : chatId, msg);
         return true;
-    } catch (e) {
-        console.error("❌ Erro envio WPP:", e.message);
-        return false;
-    }
+    } catch (e) { return false; }
 }
 
-setInterval(runAutomationCycle, 10 * 60 * 1000); 
-setTimeout(runAutomationCycle, 10000);
+setInterval(runAutomationCycle, 600000); // 10 min
 
 // --- ENDPOINTS ---
 
-app.get('/auth-status', (req, res) => {
-    const s = getSettings();
-    // Se tiver 'agentName' E 'password', está configurado.
-    res.json({ configured: !!(s.agentName && s.password) });
-});
-
+app.get('/auth-status', (req, res) => res.json({ configured: !!(getSettings().agentName && getSettings().password) }));
 app.post('/login', (req, res) => {
     const s = getSettings();
-    const { password } = req.body;
-    if (s.password && s.password === password) {
-        return res.json({ success: true });
-    }
-    return res.status(401).json({ success: false, error: 'Senha incorreta' });
+    if (s.password && s.password === req.body.password) return res.json({ success: true });
+    return res.status(401).json({ success: false });
 });
 
 app.get('/status', (req, res) => res.json({ status: clientStatus, isReady: isReady }));
@@ -417,49 +339,28 @@ app.get('/contacts', (req, res) => res.json(getContacts()));
 app.post('/contacts', (req, res) => { saveContacts(req.body); res.json({success:true}); });
 app.get('/settings', (req, res) => res.json(getSettings()));
 app.post('/settings', (req, res) => { saveSettings(req.body); res.json({success:true}); });
-
 app.get('/trigger-automation', (req, res) => { runAutomationCycle(); res.json({success:true}); });
+
 app.post('/generate-message', async (req, res) => {
-    console.log("🧠 Gerando mensagem IA para", req.body.contact?.name);
     const msg = await generateAIMessage(req.body.contact, req.body.settings);
     res.json({ message: msg });
 });
 
 app.post('/toggle-automation', (req, res) => {
     const s = getSettings(); s.automationActive = req.body.active; saveSettings(s);
-    console.log(`🔌 Automação ${s.automationActive ? 'ATIVADA' : 'DESATIVADA'}`);
     if(s.automationActive) setTimeout(runAutomationCycle, 1000);
     res.json({success:true});
 });
 
 app.post('/send', async (req, res) => { 
-    console.log("📤 Enviando mensagem manual para", req.body.phone);
     await sendWpp(req.body.phone, req.body.message); 
     res.json({success:true}); 
 });
 
-app.post('/goodbye', async (req, res) => {
-    const { contactId, sendMsg } = req.body;
-    const contacts = getContacts();
-    const contact = contacts.find(c => c.id === contactId);
-    if (contact && sendMsg) {
-        const msg = await generateAIMessage(contact, getSettings(), 99);
-        await sendWpp(contact.phone, msg);
-    }
-    const newContacts = contacts.filter(c => c.id !== contactId);
-    saveContacts(newContacts);
-    res.json({success:true});
-});
-
 app.post('/logout', async (req, res) => {
-    console.log("🚪 Logout WPP solicitado");
-    try {
-        await client.logout();
-    } catch (e) { console.error("Logout error", e); }
-    try { await client.destroy(); } catch(e){}
+    try { await client.logout(); } catch (e) {}
     client.initialize();
-    isReady = false;
-    clientStatus = 'initializing';
+    isReady = false; clientStatus = 'initializing';
     res.json({success:true});
 });
 
@@ -481,15 +382,12 @@ app.get('/whatsapp-contacts', async (req, res) => {
         for(const c of chats) {
             if(!c.isGroup && !seen.has(c.id.user)) {
                 seen.add(c.id.user);
-                const lastMsgTime = c.timestamp; 
-                unique.push({ name: c.name || c.id.user, phone: c.id.user, timestamp: lastMsgTime });
+                unique.push({ name: c.name || c.id.user, phone: c.id.user, timestamp: c.timestamp });
             }
         }
         res.json(unique);
     } catch (e) { res.status(500).json({error: e.message}); }
 });
 
-console.log("⏳ Aguardando inicialização do WhatsApp Client...");
-client.initialize().catch(err => console.error("❌ Erro fatal na inicialização do Client:", err));
-
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Servidor ImobiFlow ouvindo na porta ${PORT}`));
+client.initialize().catch(err => console.error("❌ Erro fatal:", err));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
