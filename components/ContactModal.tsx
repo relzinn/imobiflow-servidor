@@ -6,7 +6,7 @@ interface ContactModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (contact: Contact) => void;
-  onValidate?: (contact: Contact) => string | null; // Nova prop para validar duplicidade
+  onValidate?: (contact: Contact) => string | null;
   initialContact?: Contact | null;
   settings: AppSettings | null;
   defaultType?: ContactType;
@@ -22,6 +22,13 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
   const [phoneError, setPhoneError] = useState('');
   const [messageTone, setMessageTone] = useState<string>(''); 
 
+  // Novos Estados
+  const [propertyAddress, setPropertyAddress] = useState('');
+  const [propertyValue, setPropertyValue] = useState('');
+  const [hasExchange, setHasExchange] = useState(false);
+  const [exchangeDescription, setExchangeDescription] = useState('');
+  const [exchangeValue, setExchangeValue] = useState('');
+
   useEffect(() => {
     if (initialContact) {
       setName(initialContact.name);
@@ -31,6 +38,13 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       setLastContactDate(initialContact.lastContactDate.split('T')[0]);
       setFrequencyDays(initialContact.followUpFrequencyDays);
       setMessageTone(initialContact.messageTone || '');
+      
+      // Carregar novos campos
+      setPropertyAddress(initialContact.propertyAddress || '');
+      setPropertyValue(initialContact.propertyValue || '');
+      setHasExchange(initialContact.hasExchange || false);
+      setExchangeDescription(initialContact.exchangeDescription || '');
+      setExchangeValue(initialContact.exchangeValue || '');
     } else {
       setName('');
       setPhone('');
@@ -38,6 +52,12 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       setNotes('');
       setLastContactDate(new Date().toISOString().split('T')[0]);
       setMessageTone('');
+      
+      setPropertyAddress('');
+      setPropertyValue('');
+      setHasExchange(false);
+      setExchangeDescription('');
+      setExchangeValue('');
       
       const targetType = defaultType || ContactType.CLIENT;
       if (settings) {
@@ -59,6 +79,11 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       return clean;
   };
 
+  const formatCurrency = (val: string) => {
+      // Simples formatador visual, mantém o valor como string livre
+      return val; 
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
@@ -68,7 +93,6 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
         return;
     }
 
-    // Objeto temporário para validação
     const tempContact: Contact = {
       id: initialContact ? initialContact.id : (typeof crypto !== 'undefined' ? crypto.randomUUID() : Date.now().toString()),
       name,
@@ -81,10 +105,16 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       automationStage: initialContact?.automationStage ?? AutomationStage.IDLE,
       autoPilotEnabled: initialContact?.autoPilotEnabled ?? true,
       lastReplyTimestamp: initialContact?.lastReplyTimestamp,
-      hasUnreadReply: false
+      hasUnreadReply: false,
+      
+      // Novos campos
+      propertyAddress: (type === ContactType.OWNER || type === ContactType.BUILDER) ? propertyAddress : undefined,
+      propertyValue: (type === ContactType.OWNER || type === ContactType.BUILDER) ? propertyValue : undefined,
+      hasExchange: (type === ContactType.CLIENT) ? hasExchange : undefined,
+      exchangeDescription: (type === ContactType.CLIENT && hasExchange) ? exchangeDescription : undefined,
+      exchangeValue: (type === ContactType.CLIENT && hasExchange) ? exchangeValue : undefined
     };
 
-    // Validação Externa (Duplicidade)
     if (onValidate) {
         const errorMsg = onValidate(tempContact);
         if (errorMsg) {
@@ -100,6 +130,8 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
   if (!isOpen) return null;
 
   const toneOptions = ['Casual', 'Formal', 'Persuasivo', 'Amigável', 'Consultivo', 'Urgente', 'Entusiasta', 'Elegante'];
+  const isOwnerOrBuilder = type === ContactType.OWNER || type === ContactType.BUILDER;
+  const isClient = type === ContactType.CLIENT;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
@@ -124,7 +156,6 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
                 }} 
             />
             {phoneError && <p className="text-xs text-red-600 font-bold mt-1 bg-red-50 p-1 rounded border border-red-100">{phoneError}</p>}
-            {!phoneError && <p className="text-[10px] text-gray-400 mt-1">O sistema adicionará '55' automaticamente se você esquecer.</p>}
           </div>
 
           <div className="grid grid-cols-2 gap-4">
@@ -139,6 +170,44 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
                  <input type="number" className="w-full border rounded p-2" value={frequencyDays} onChange={e => setFrequencyDays(Number(e.target.value))} />
              </div>
           </div>
+
+          {/* CAMPOS ESPECÍFICOS: PROPRIETÁRIO / CONSTRUTOR */}
+          {isOwnerOrBuilder && (
+            <div className="bg-slate-50 p-3 rounded border border-slate-200 space-y-3">
+                <h4 className="text-xs font-bold text-blue-600 uppercase">Dados do Imóvel</h4>
+                <div>
+                    <label className="block text-[10px] font-bold text-gray-500 mb-1">Endereço / Condomínio</label>
+                    <input className="w-full border rounded p-2 text-sm" placeholder="Ex: Rua das Flores, 123 - Ed. Solar" value={propertyAddress} onChange={e => setPropertyAddress(e.target.value)} />
+                </div>
+                <div>
+                    <label className="block text-[10px] font-bold text-gray-500 mb-1">Valor Pretendido (R$)</label>
+                    <input className="w-full border rounded p-2 text-sm" placeholder="Ex: 500.000,00" value={propertyValue} onChange={e => setPropertyValue(e.target.value)} />
+                </div>
+            </div>
+          )}
+
+          {/* CAMPOS ESPECÍFICOS: CLIENTE / COMPRADOR */}
+          {isClient && (
+            <div className="bg-slate-50 p-3 rounded border border-slate-200 space-y-3">
+                <div className="flex items-center gap-2">
+                    <input type="checkbox" id="hasExchange" checked={hasExchange} onChange={e => setHasExchange(e.target.checked)} className="w-4 h-4 text-blue-600 rounded" />
+                    <label htmlFor="hasExchange" className="text-sm font-bold text-gray-700 select-none">Possui Permuta?</label>
+                </div>
+                
+                {hasExchange && (
+                    <div className="animate-in slide-in-from-top-2 space-y-3 pl-2 border-l-2 border-blue-200">
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-500 mb-1">Descrição da Permuta</label>
+                            <input className="w-full border rounded p-2 text-sm" placeholder="Ex: Apto 2 dorms no Centro" value={exchangeDescription} onChange={e => setExchangeDescription(e.target.value)} />
+                        </div>
+                        <div>
+                            <label className="block text-[10px] font-bold text-gray-500 mb-1">Valor da Permuta (R$)</label>
+                            <input className="w-full border rounded p-2 text-sm" placeholder="Ex: 350.000,00" value={exchangeValue} onChange={e => setExchangeValue(e.target.value)} />
+                        </div>
+                    </div>
+                )}
+            </div>
+          )}
           
           <div>
              <label className="block text-xs font-bold text-gray-500 mb-1">Tom de Voz</label>
@@ -146,7 +215,6 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
                 <option value="">Padrão (Usar Global)</option>
                 {toneOptions.map(t => <option key={t} value={t}>{t}</option>)}
              </select>
-             <p className="text-[10px] text-gray-400 mt-1">Define como a IA fala com este contato específico.</p>
           </div>
           
           <div>
@@ -155,15 +223,13 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
           </div>
 
           <div>
-             <label className="block text-xs font-bold text-gray-500 mb-1">Observações Internas {initialContact?.hasUnreadReply && <span className="text-red-500 text-xs">(Atualize com a resposta do cliente)</span>}</label>
+             <label className="block text-xs font-bold text-gray-500 mb-1">Observações Internas</label>
              <textarea 
-                placeholder="Ex: Procura apto 3 quartos, reclamou do preço, quer vista pro mar..." 
-                className={`w-full border rounded p-2 h-24 ${initialContact?.hasUnreadReply ? 'border-blue-500 bg-blue-50' : ''}`}
+                placeholder="Ex: Cliente prefere contato pela manhã..." 
+                className={`w-full border rounded p-2 h-20 ${initialContact?.hasUnreadReply ? 'border-blue-500 bg-blue-50' : ''}`}
                 value={notes} 
                 onChange={e => setNotes(e.target.value)} 
-                autoFocus={!!initialContact?.hasUnreadReply}
              />
-             <p className="text-[10px] text-gray-400 mt-1">Essa informação é interna. A IA usará apenas como contexto.</p>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

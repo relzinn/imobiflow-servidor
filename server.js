@@ -1,4 +1,5 @@
 
+
 require('dotenv').config(); // Carrega variáveis de ambiente do arquivo .env
 
 // ==================================================================================
@@ -61,7 +62,7 @@ app.use((req, res, next) => {
 
 // --- MIDDLEWARE DE COMPILAÇÃO JIT (JUST-IN-TIME) ---
 app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api/') || req.path === '/qr' || req.path === '/status' || req.path === '/auth-status' || req.path === '/login') return next();
+    if (req.path.startsWith('/api/') || req.path === '/qr' || req.path === '/status' || req.path === '/auth-status' || req.path === '/login' || req.path === '/recover-password') return next();
     
     let filePath = path.join(__dirname, req.path);
     if (req.path === '/') filePath = path.join(__dirname, 'index.html');
@@ -95,7 +96,7 @@ app.use(express.static(__dirname));
 
 // --- MIDDLEWARE DE AUTENTICAÇÃO ---
 const authMiddleware = (req, res, next) => {
-    const publicRoutes = ['/status', '/qr', '/auth-status', '/login', '/logout', '/'];
+    const publicRoutes = ['/status', '/qr', '/auth-status', '/login', '/logout', '/recover-password', '/'];
     if (publicRoutes.includes(req.path)) return next();
 
     const settings = getSettings();
@@ -130,7 +131,19 @@ async function generateAIMessage(contact, settings, stage = 0) {
         const ai = new GoogleGenAI({ apiKey: API_KEY });
         const modelId = "gemini-2.5-flash"; 
 
-        const internalNotes = contact.notes ? `MOTIVO/OBSERVAÇÃO DO CLIENTE: "${contact.notes}"` : "Sem observações específicas (apenas follow-up de rotina).";
+        // Montagem do Contexto Rico com os novos campos
+        let propertyContext = "";
+        
+        if (contact.type === 'Proprietário' || contact.type === 'Construtor') {
+            if (contact.propertyAddress) propertyContext += `\nIMÓVEL DO PROPRIETÁRIO: ${contact.propertyAddress}`;
+            if (contact.propertyValue) propertyContext += `\nVALOR PEDIDO: ${contact.propertyValue}`;
+        } else if (contact.type === 'Cliente/Comprador' && contact.hasExchange) {
+            propertyContext += `\nCLIENTE TEM PERMUTA: Sim`;
+            if (contact.exchangeDescription) propertyContext += `\nDETALHES DA PERMUTA (IMÓVEL DELE): ${contact.exchangeDescription}`;
+            if (contact.exchangeValue) propertyContext += `\nVALOR DA PERMUTA: ${contact.exchangeValue}`;
+        }
+
+        const internalNotes = contact.notes ? `\nOBSERVAÇÃO INTERNA: "${contact.notes}"` : "\nOBSERVAÇÃO INTERNA: Sem observações específicas.";
 
         let context = "Retomada de contato.";
         if (stage === 1) context = "Cobrança amigável (sem resposta anterior).";
@@ -140,17 +153,17 @@ async function generateAIMessage(contact, settings, stage = 0) {
           Você é ${agent}, corretor da ${agency}.
           Escreva uma mensagem de WhatsApp para ${contact.name} (${contact.type}).
           
-          CONTEXTO DO CLIENTE:
-          ${internalNotes}
+          DADOS IMPORTANTES DO CLIENTE:${propertyContext}${internalNotes}
           
           OBJETIVO: ${context}
           
           REGRAS OBRIGATÓRIAS:
           1. Use um tom ${tone}.
-          2. SE houver uma observação acima (como "procura apto" ou "imovel rua X"), VOCÊ DEVE MENCIONAR ISSO NA PERGUNTA. É proibido ignorar a observação.
-          3. Se não houver observação, pergunte genericamente se ainda busca imóveis.
-          4. Seja breve (máximo 3 linhas).
-          5. Não use hashtags.
+          2. SE houver dados sobre o imóvel (endereço) ou permuta nos "DADOS IMPORTANTES", você DEVE mencionar sutilmente para mostrar que lembra do caso.
+          3. SE houver uma observação interna, use-a como gancho.
+          4. Se não houver dados específicos, pergunte genericamente.
+          5. Seja breve (máximo 3 linhas).
+          6. Não use hashtags.
         `;
 
         const response = await ai.models.generateContent({
@@ -349,6 +362,14 @@ app.post('/login', (req, res) => {
     const s = getSettings();
     if (s.password && s.password === req.body.password) return res.json({ success: true });
     return res.status(401).json({ success: false });
+});
+
+// Endpoint de recuperação de senha (seguro para MVP: loga no servidor)
+app.post('/recover-password', (req, res) => {
+    const s = getSettings();
+    console.warn("🔐 RECUPERAÇÃO DE SENHA SOLICITADA");
+    console.warn(`🔑 A SENHA ATUAL É: "${s.password}"`);
+    res.json({ success: true, message: "Senha enviada para o log do servidor." });
 });
 
 app.get('/status', (req, res) => res.json({ status: clientStatus, isReady: isReady }));

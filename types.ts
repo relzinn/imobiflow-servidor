@@ -1,4 +1,5 @@
 
+
 export enum ContactType {
   OWNER = 'Proprietário',
   BUILDER = 'Construtor',
@@ -22,6 +23,14 @@ export interface Contact {
   followUpFrequencyDays: number;
   messageTone?: string; // Tom de voz específico para este contato
   
+  // Novos Campos Específicos
+  propertyAddress?: string; // Para Proprietário/Construtor
+  propertyValue?: string;   // Para Proprietário/Construtor
+  
+  hasExchange?: boolean;        // Para Cliente
+  exchangeDescription?: string; // Para Cliente (Dados do imóvel de permuta)
+  exchangeValue?: string;       // Para Cliente (Valor da permuta)
+
   // Automação e Sync
   autoPilotEnabled?: boolean;
   automationStage: AutomationStage;

@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { StrategyWizard } from './components/StrategyWizard';
 import { ContactModal } from './components/ContactModal';
@@ -24,7 +25,7 @@ const getColorFromInitial = (char: string) => {
 
 // --- COMPONENTS ---
 
-const LoginScreen: React.FC<{ onLogin: (pass: string) => void, error: string }> = ({ onLogin, error }) => {
+const LoginScreen: React.FC<{ onLogin: (pass: string) => void, onRecover: () => void, error: string }> = ({ onLogin, onRecover, error }) => {
     const [pass, setPass] = useState('');
     return (
         <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
@@ -44,6 +45,9 @@ const LoginScreen: React.FC<{ onLogin: (pass: string) => void, error: string }> 
                     {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-xs rounded border border-red-200">{error}</div>}
                     <button type="submit" className="w-full bg-slate-900 text-white p-3 rounded-lg font-bold hover:bg-black transition-colors">Entrar</button>
                 </form>
+                <div className="mt-4 text-center">
+                    <button onClick={onRecover} className="text-xs text-blue-600 hover:underline">Esqueci a senha</button>
+                </div>
             </div>
         </div>
     );
@@ -324,6 +328,15 @@ const App: React.FC = () => {
       } catch (e) { setLoginError('Erro de conexão com servidor.'); }
   };
 
+  const handleRecoverPassword = async () => {
+      if(window.confirm("Isso exibirá a senha no terminal do servidor (Logs). Continuar?")) {
+        try {
+            await fetch(`${getServerUrl()}/recover-password`, { method: 'POST', headers: { 'Content-Type': 'application/json' } });
+            alert("A senha foi impressa nos logs do servidor. Verifique o terminal.");
+        } catch(e) { alert("Erro ao contactar servidor."); }
+      }
+  };
+
   const handleWizardComplete = (s: AppSettings) => {
       fetch(`${s.serverUrl}/settings`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'ngrok-skip-browser-warning': 'true' }, body: JSON.stringify(s) }).then(res => res.json()).then(data => {
           if (data.success) {
@@ -387,14 +400,17 @@ const App: React.FC = () => {
 
   if(viewState==='loading') return <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white"><div className="animate-pulse">Carregando ImobiFlow...</div></div>;
   if(viewState==='wizard') return <StrategyWizard onComplete={handleWizardComplete}/>;
-  if(viewState==='login') return <LoginScreen onLogin={handleLoginSubmit} error={loginError} />;
+  if(viewState==='login') return <LoginScreen onLogin={handleLoginSubmit} onRecover={handleRecoverPassword} error={loginError} />;
 
   // --- FILTRAGEM ---
   const filtered = contacts.filter(c => {
     const matchesFilter = filterType === 'ALL' || c.type === filterType;
+    const term = searchTerm.toLowerCase();
     const matchesSearch = searchTerm === '' || 
-        c.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-        c.phone.includes(searchTerm);
+        c.name.toLowerCase().includes(term) || 
+        c.phone.includes(term) ||
+        c.propertyAddress?.toLowerCase().includes(term) ||
+        c.exchangeDescription?.toLowerCase().includes(term);
     return matchesFilter && matchesSearch;
   });
   
@@ -465,7 +481,7 @@ const App: React.FC = () => {
                         <input 
                             type="text" 
                             className="block w-full pl-10 pr-3 py-2.5 border-none rounded-xl bg-slate-50 text-sm text-slate-700 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-100 focus:bg-white transition-all shadow-inner"
-                            placeholder="Buscar por nome ou telefone..."
+                            placeholder="Buscar por nome, imóvel ou telefone..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
                         />
@@ -544,6 +560,19 @@ const App: React.FC = () => {
                                         <div>
                                             <h3 className="font-bold text-slate-800 text-sm">{c.name}</h3>
                                             <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wide">{c.type}</p>
+                                            
+                                            {/* NOVOS CAMPOS: VISUALIZAÇÃO NO CARD */}
+                                            {(c.type === ContactType.OWNER || c.type === ContactType.BUILDER) && c.propertyAddress && (
+                                                <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded inline-block border border-slate-100">
+                                                    🏠 {c.propertyAddress} {c.propertyValue && <span className="text-green-600 font-bold">({c.propertyValue})</span>}
+                                                </div>
+                                            )}
+                                            {c.type === ContactType.CLIENT && c.hasExchange && (
+                                                <div className="text-[11px] text-slate-500 mt-1 flex items-center gap-1 bg-blue-50 text-blue-700 px-2 py-0.5 rounded inline-block border border-blue-100">
+                                                    🔄 Permuta: {c.exchangeDescription} {c.exchangeValue && <span className="font-bold">({c.exchangeValue})</span>}
+                                                </div>
+                                            )}
+
                                         </div>
                                     </div>
 
