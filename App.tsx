@@ -241,17 +241,7 @@ const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, settings: 
                     </select>
                 </div>
                 
-                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-                    <label className="text-xs font-bold text-blue-600 mb-1 block">GOOGLE GEMINI API KEY</label>
-                    <input 
-                        className="w-full border p-2 rounded bg-white text-sm" 
-                        type="password"
-                        placeholder="AIzaSy..." 
-                        value={s.apiKey || ''} 
-                        onChange={e=>setS({...s,apiKey:e.target.value})}
-                    />
-                    <p className="text-[10px] text-blue-400 mt-1">Insira aqui se não conseguir usar o arquivo .env</p>
-                </div>
+                {/* API KEY INPUT REMOVED: Managed by Server Environment now */}
 
                 <div className="pt-4 border-t"><h4 className="font-bold text-xs uppercase mb-2">Ciclo Padrão (Dias)</h4><div className="grid grid-cols-3 gap-2">
                     <div><label className="text-[10px]">Prop</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyOwner} onChange={e => setS({...s, defaultFrequencyOwner: Number(e.target.value)})}/></div>

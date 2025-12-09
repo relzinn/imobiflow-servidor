@@ -42,7 +42,6 @@ export interface AppSettings {
   agentName: string;
   agencyName: string;
   password?: string; // Senha de acesso ao sistema
-  apiKey?: string; // Chave da API do Gemini (Opcional via UI)
   messageTone: 'Formal' | 'Casual' | 'Persuasivo' | 'Amigável' | 'Consultivo' | 'Urgente' | 'Entusiasta' | 'Elegante';
   defaultFrequencyOwner: number;
   defaultFrequencyBuilder: number;

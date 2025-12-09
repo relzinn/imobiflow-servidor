@@ -3,6 +3,19 @@ require('dotenv').config(); // Carrega variáveis de ambiente do arquivo .env
 
 console.log("🚀 Iniciando processo do servidor...");
 
+// --- VALIDAÇÃO DE API KEY ---
+const API_KEY = process.env.API_KEY;
+
+if (API_KEY) {
+    console.log(`✅ API KEY DETECTADA: ${API_KEY.substring(0, 6)}...****** (Comprimento: ${API_KEY.length})`);
+    if (API_KEY.length < 20) {
+        console.warn("⚠️ AVISO: A API Key parece muito curta. Verifique se está correta.");
+    }
+} else {
+    console.error("❌ ERRO CRÍTICO: API_KEY NÃO ENCONTRADA NAS VARIÁVEIS DE AMBIENTE (.env)");
+}
+// ----------------------------
+
 try {
     require.resolve('express');
 } catch (e) {
@@ -100,14 +113,15 @@ async function generateAIMessage(contact, settings, stage = 0) {
     const agency = settings.agencyName || "nossa imobiliária";
     const tone = contact.messageTone || settings.messageTone || "Casual";
 
-    // 🚀 LÓGICA DE RECUPERAÇÃO DA API KEY ATUALIZADA
-    // Tenta pegar do ambiente (seguro) ou das configurações (fallback UI)
-    const effectiveApiKey = process.env.API_KEY || settings.apiKey;
+    // 🚀 LÓGICA RÍGIDA: SÓ USA A CHAVE DO AMBIENTE
+    const effectiveApiKey = process.env.API_KEY;
 
-    if (!effectiveApiKey || effectiveApiKey.length < 20) {
-        console.warn("⚠️ Chave API inválida ou não encontrada (Env ou Settings). Usando Modo Template.");
+    if (!effectiveApiKey) {
+        console.error("❌ FALHA AO GERAR MENSAGEM: API_KEY não encontrada no processo do servidor.");
         return generateTemplateFallback(contact, settings, stage);
     }
+
+    console.log(`🤖 IA Iniciada para ${contact.name}. Usando chave: ${effectiveApiKey.substring(0,5)}...`);
 
     try {
         const ai = new GoogleGenAI({ apiKey: effectiveApiKey });
@@ -153,16 +167,20 @@ async function generateAIMessage(contact, settings, stage = 0) {
                 topK: 40
             }
         });
-
-        return response.text.trim();
+        
+        const generatedText = response.text.trim();
+        console.log("✨ Mensagem gerada com sucesso pela IA.");
+        return generatedText;
 
     } catch (error) {
-        console.error("❌ Erro IA:", error.message);
+        console.error("❌ ERRO NA CHAMADA DA IA (GOOGLE GEMINI):", error.message);
+        if (error.response) console.error("Detalhes:", JSON.stringify(error.response));
         return generateTemplateFallback(contact, settings, stage);
     }
 }
 
 function generateTemplateFallback(contact, settings, stage = 0) {
+    console.warn("⚠️ Usando fallback (template) para mensagem.");
     const agent = settings.agentName || "Seu Corretor";
     
     if (stage === 99) {
