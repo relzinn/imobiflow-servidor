@@ -24,6 +24,7 @@ export interface Contact {
   messageTone?: string; // Tom de voz específico para este contato
   
   // Novos Campos Específicos
+  propertyType?: string;    // Novo campo: Casa, Apto, etc.
   propertyAddress?: string; // Para Proprietário/Construtor
   propertyValue?: string;   // Para Proprietário/Construtor
   

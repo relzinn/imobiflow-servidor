@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { Contact, ContactType, AppSettings, AutomationStage } from '../types';
 
@@ -23,6 +24,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
   const [messageTone, setMessageTone] = useState<string>(''); 
 
   // Novos Estados
+  const [propertyType, setPropertyType] = useState('');
   const [propertyAddress, setPropertyAddress] = useState('');
   const [propertyValue, setPropertyValue] = useState('');
   const [hasExchange, setHasExchange] = useState(false);
@@ -39,6 +41,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       setFrequencyDays(initialContact.followUpFrequencyDays);
       setMessageTone(initialContact.messageTone || '');
       
+      setPropertyType(initialContact.propertyType || '');
       setPropertyAddress(initialContact.propertyAddress || '');
       setPropertyValue(initialContact.propertyValue || '');
       setHasExchange(initialContact.hasExchange || false);
@@ -52,6 +55,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       setLastContactDate(new Date().toISOString().split('T')[0]);
       setMessageTone('');
       
+      setPropertyType('');
       setPropertyAddress('');
       setPropertyValue('');
       setHasExchange(false);
@@ -112,6 +116,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
       lastReplyTimestamp: initialContact?.lastReplyTimestamp,
       hasUnreadReply: false,
       
+      propertyType: (type === ContactType.OWNER || type === ContactType.BUILDER) ? propertyType : undefined,
       propertyAddress: (type === ContactType.OWNER || type === ContactType.BUILDER) ? propertyAddress : undefined,
       propertyValue: (type === ContactType.OWNER || type === ContactType.BUILDER) ? propertyValue : undefined,
       hasExchange: (type === ContactType.CLIENT) ? hasExchange : undefined,
@@ -164,7 +169,7 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
 
           <div className="grid grid-cols-2 gap-4">
              <div>
-                 <label className="block text-xs font-bold text-gray-500 mb-1">Tipo</label>
+                 <label className="block text-xs font-bold text-gray-500 mb-1">Tipo de Cliente</label>
                  <select className="w-full border rounded p-2" value={type} onChange={e => setType(e.target.value as ContactType)}>
                     {Object.values(ContactType).map(t => <option key={t} value={t}>{t}</option>)}
                  </select>
@@ -179,6 +184,12 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
           {isOwnerOrBuilder && (
             <div className="bg-slate-50 p-3 rounded border border-slate-200 space-y-3">
                 <h4 className="text-xs font-bold text-blue-600 uppercase">Dados do Imóvel</h4>
+                
+                <div>
+                    <label className="block text-[10px] font-bold text-gray-500 mb-1">Tipo do Imóvel</label>
+                    <input className="w-full border rounded p-2 text-sm" placeholder="Ex: Apartamento, Casa, Terreno..." value={propertyType} onChange={e => setPropertyType(e.target.value)} />
+                </div>
+
                 <div>
                     <label className="block text-[10px] font-bold text-gray-500 mb-1">Endereço / Condomínio</label>
                     <input className="w-full border rounded p-2 text-sm" placeholder="Ex: Rua das Flores, 123 - Ed. Solar" value={propertyAddress} onChange={e => setPropertyAddress(e.target.value)} />

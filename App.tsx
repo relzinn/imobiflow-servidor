@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import { StrategyWizard } from './components/StrategyWizard';
 import { ContactModal } from './components/ContactModal';
@@ -78,6 +79,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
     const [reviewTone, setReviewTone] = useState('');
     
     // New Fields for Review
+    const [reviewPropertyType, setReviewPropertyType] = useState('');
     const [reviewPropertyAddr, setReviewPropertyAddr] = useState('');
     const [reviewPropertyValue, setReviewPropertyValue] = useState('');
     const [reviewHasExchange, setReviewHasExchange] = useState(false);
@@ -128,6 +130,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
         setReviewNotes('');
         setReviewType(targetType); 
         setReviewTone('');
+        setReviewPropertyType('');
         setReviewPropertyAddr('');
         setReviewPropertyValue('');
         setReviewHasExchange(false);
@@ -145,6 +148,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
             customNotes: reviewNotes, 
             type: reviewType, 
             messageTone: reviewTone || undefined,
+            propertyType: (reviewType === ContactType.OWNER || reviewType === ContactType.BUILDER) ? reviewPropertyType : undefined,
             propertyAddress: (reviewType === ContactType.OWNER || reviewType === ContactType.BUILDER) ? reviewPropertyAddr : undefined,
             propertyValue: (reviewType === ContactType.OWNER || reviewType === ContactType.BUILDER) ? reviewPropertyValue : undefined,
             hasExchange: (reviewType === ContactType.CLIENT) ? reviewHasExchange : undefined,
@@ -189,6 +193,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
                 automationStage: AutomationStage.IDLE, 
                 autoPilotEnabled: true, 
                 hasUnreadReply: false,
+                propertyType: c.propertyType,
                 propertyAddress: c.propertyAddress,
                 propertyValue: c.propertyValue,
                 hasExchange: c.hasExchange,
@@ -218,6 +223,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
                         {isOwner && (
                             <div className="bg-slate-50 p-2 border rounded">
                                 <label className="text-[10px] font-bold uppercase text-blue-600">Dados do Imóvel</label>
+                                <input className="w-full border p-2 rounded text-xs mb-2" placeholder="Tipo (Ex: Apto, Casa...)" value={reviewPropertyType} onChange={e=>setReviewPropertyType(e.target.value)}/>
                                 <input className="w-full border p-2 rounded text-xs mb-2" placeholder="Endereço/Condomínio" value={reviewPropertyAddr} onChange={e=>setReviewPropertyAddr(e.target.value)}/>
                                 <input className="w-full border p-2 rounded text-xs font-mono text-green-700" placeholder="R$ Valor" value={reviewPropertyValue} onChange={e=>{const v=e.target.value.replace(/\D/g,''); setReviewPropertyValue(formatCurrency(v))}}/>
                             </div>
@@ -257,7 +263,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg h-[600px] flex flex-col animate-in zoom-in-95">
                 <div className="p-4 border-b flex justify-between"><h3 className="font-bold">Importar</h3><button onClick={onClose} className="font-bold text-xl">✕</button></div>
                 <div className="p-4 bg-gray-50 flex gap-2"><div className="relative w-full"><input className="w-full border rounded p-2 pr-8" placeholder="Buscar..." value={searchTerm} onChange={e=>setSearchTerm(e.target.value)}/><button onClick={()=>setSearchTerm('')} className="absolute right-2 top-2 text-gray-400 hover:text-gray-600 font-bold">✕</button></div></div>
-                <div className="flex-1 overflow-y-auto p-2">{loading?<div className="text-center p-10">Carregando conversas do WhatsApp...</div>:waContacts.filter(c=>c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(c=>(<div key={c.phone} onClick={()=>handleToggle(c.phone)} className={`flex p-2 hover:bg-gray-100 cursor-pointer ${selected.has(c.phone)?'bg-blue-50 border':''}`}><input type="checkbox" checked={selected.has(c.phone)} readOnly className="mr-3"/><div><div className="font-bold">{c.name}</div><div className="text-xs text-gray-500">{c.phone}</div></div></div>))}</div>
+                <div className="flex-1 overflow-y-auto p-2">{loading?<div className="text-center p-10">Carregando e Sincronizando Nomes...</div>:waContacts.filter(c=>c.name.toLowerCase().includes(searchTerm.toLowerCase())).map(c=>(<div key={c.phone} onClick={()=>handleToggle(c.phone)} className={`flex p-2 hover:bg-gray-100 cursor-pointer ${selected.has(c.phone)?'bg-blue-50 border':''}`}><input type="checkbox" checked={selected.has(c.phone)} readOnly className="mr-3"/><div><div className="font-bold">{c.name}</div><div className="text-xs text-gray-500">{c.phone}</div></div></div>))}</div>
                 <div className="p-4 border-t flex justify-between bg-gray-50"><span>{selected.size} selecionados</span><div className="flex gap-2"><button onClick={onClose} className="bg-gray-200 px-4 py-2 rounded font-bold">Cancelar</button><button onClick={handleStartImport} disabled={!selected.size} className="bg-blue-600 text-white px-6 py-2 rounded font-bold disabled:opacity-50">Qualificar</button></div></div>
             </div>
         </div>
@@ -469,6 +475,7 @@ const App: React.FC = () => {
         c.name.toLowerCase().includes(term) || 
         c.phone.includes(term) ||
         c.propertyAddress?.toLowerCase().includes(term) ||
+        c.propertyType?.toLowerCase().includes(term) ||
         c.exchangeDescription?.toLowerCase().includes(term);
     return matchesFilter && matchesSearch;
   });
@@ -626,7 +633,10 @@ const App: React.FC = () => {
                                         {(c.type === ContactType.OWNER || c.type === ContactType.BUILDER) ? (
                                             c.propertyAddress ? (
                                                 <div className="flex flex-col">
-                                                    <span className="font-medium text-slate-700 truncate">🏠 {c.propertyAddress}</span>
+                                                    <span className="font-medium text-slate-700 truncate">
+                                                        {c.propertyType && <span className="font-bold text-slate-900 mr-1">{c.propertyType}:</span>}
+                                                        🏠 {c.propertyAddress}
+                                                    </span>
                                                     {c.propertyValue && <span className="text-[11px] text-green-600 font-bold font-mono">{c.propertyValue}</span>}
                                                 </div>
                                             ) : <span className="text-slate-300 italic text-xs">Sem dados do imóvel</span>

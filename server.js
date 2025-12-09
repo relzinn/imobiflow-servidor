@@ -135,7 +135,8 @@ async function generateAIMessage(contact, settings, stage = 0) {
         let propertyContext = "";
         
         if (contact.type === 'Proprietário' || contact.type === 'Construtor') {
-            if (contact.propertyAddress) propertyContext += `\nIMÓVEL DO PROPRIETÁRIO: ${contact.propertyAddress}`;
+            if (contact.propertyType) propertyContext += `\nTIPO DO IMÓVEL: ${contact.propertyType}`;
+            if (contact.propertyAddress) propertyContext += `\nENDEREÇO/LOCAL: ${contact.propertyAddress}`;
             if (contact.propertyValue) propertyContext += `\nVALOR PEDIDO: ${contact.propertyValue}`;
         } else if (contact.type === 'Cliente/Comprador' && contact.hasExchange) {
             propertyContext += `\nCLIENTE TEM PERMUTA: Sim`;
@@ -159,7 +160,7 @@ async function generateAIMessage(contact, settings, stage = 0) {
           
           REGRAS OBRIGATÓRIAS:
           1. Use um tom ${tone}.
-          2. SE houver dados sobre o imóvel (endereço) ou permuta nos "DADOS IMPORTANTES", você DEVE mencionar sutilmente para mostrar que lembra do caso.
+          2. SE houver dados sobre o imóvel (tipo/endereço) ou permuta nos "DADOS IMPORTANTES", você DEVE mencionar sutilmente para mostrar que lembra do caso.
           3. SE houver uma observação interna, use-a como gancho.
           4. Se não houver dados específicos, pergunte genericamente.
           5. Seja breve (máximo 3 linhas).
@@ -418,14 +419,41 @@ app.get('/whatsapp-contacts', async (req, res) => {
         const chats = await client.getChats();
         const unique = [];
         const seen = new Set();
-        for(const c of chats) {
+        
+        console.log(`📥 Importando ${chats.length} chats...`);
+
+        // Limita a 500 chats mais recentes para não travar a importação se tiver milhares
+        const recentChats = chats.slice(0, 500);
+
+        for(const c of recentChats) {
             if(!c.isGroup && !seen.has(c.id.user)) {
                 seen.add(c.id.user);
-                unique.push({ name: c.name || c.id.user, phone: c.id.user, timestamp: c.timestamp });
+                
+                let displayName = c.name;
+                
+                // Tenta buscar o nome real do contato salvo na agenda
+                try {
+                    const contact = await c.getContact();
+                    if (contact) {
+                        // Prioridade: Nome na Agenda > Pushname (Nome Perfil) > Nome Formatado > Número
+                        displayName = contact.name || contact.pushname || contact.shortName || c.name || c.id.user;
+                    }
+                } catch (e) {
+                    console.log(`Erro ao buscar detalhes contato ${c.id.user}:`, e.message);
+                }
+
+                unique.push({ 
+                    name: displayName, 
+                    phone: c.id.user, 
+                    timestamp: c.timestamp 
+                });
             }
         }
         res.json(unique);
-    } catch (e) { res.status(500).json({error: e.message}); }
+    } catch (e) { 
+        console.error("Erro na importação:", e);
+        res.status(500).json({error: e.message}); 
+    }
 });
 
 client.initialize().catch(err => console.error("❌ Erro fatal:", err));
