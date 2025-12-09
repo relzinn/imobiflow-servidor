@@ -1,3 +1,4 @@
+
 require('dotenv').config(); // Carrega variáveis de ambiente do arquivo .env
 
 console.log("🚀 Iniciando processo do servidor...");
@@ -20,8 +21,6 @@ const { GoogleGenAI } = require("@google/genai");
 const { transform } = require('sucrase');
 
 console.log("✅ Dependências carregadas com sucesso.");
-
-const TEAM_GEMINI_API_KEY = process.env.API_KEY;
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -101,13 +100,17 @@ async function generateAIMessage(contact, settings, stage = 0) {
     const agency = settings.agencyName || "nossa imobiliária";
     const tone = contact.messageTone || settings.messageTone || "Casual";
 
-    if (!TEAM_GEMINI_API_KEY || TEAM_GEMINI_API_KEY.length < 20) {
-        console.warn("⚠️ Chave API inválida ou não configurada no ambiente (.env). Usando Modo Template.");
+    // 🚀 LÓGICA DE RECUPERAÇÃO DA API KEY ATUALIZADA
+    // Tenta pegar do ambiente (seguro) ou das configurações (fallback UI)
+    const effectiveApiKey = process.env.API_KEY || settings.apiKey;
+
+    if (!effectiveApiKey || effectiveApiKey.length < 20) {
+        console.warn("⚠️ Chave API inválida ou não encontrada (Env ou Settings). Usando Modo Template.");
         return generateTemplateFallback(contact, settings, stage);
     }
 
     try {
-        const ai = new GoogleGenAI({ apiKey: TEAM_GEMINI_API_KEY });
+        const ai = new GoogleGenAI({ apiKey: effectiveApiKey });
         const modelId = "gemini-2.5-flash";
 
         const internalNotes = contact.notes ? `OBSERVAÇÃO/MOTIVO REAL DO CONTATO: "${contact.notes}"` : "Sem observações específicas (apenas acompanhamento de rotina).";

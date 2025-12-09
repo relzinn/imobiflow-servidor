@@ -221,11 +221,14 @@ const ChatModal: React.FC<{ contact: Contact | null, onClose: () => void, server
 
 const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, settings: AppSettings, onSave: (s: AppSettings) => void }> = ({ isOpen, onClose, settings, onSave }) => {
     const [s, setS] = useState(settings);
+    
     useEffect(()=>setS(settings),[settings,isOpen]);
+    
     if(!isOpen) return null;
+    
     return (
         <div className="fixed inset-0 bg-black/50 z-[80] flex items-center justify-center p-4">
-            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+            <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
                 <h2 className="font-bold text-xl">Ajustes Gerais</h2>
                 <div><label className="text-xs font-bold text-gray-500">NOME DO CORRETOR</label><input className="w-full border p-2 rounded" value={s.agentName} onChange={e=>setS({...s,agentName:e.target.value})}/></div>
                 <div><label className="text-xs font-bold text-gray-500">NOME DA IMOBILIÁRIA</label><input className="w-full border p-2 rounded" value={s.agencyName} onChange={e=>setS({...s,agencyName:e.target.value})}/></div>
@@ -238,6 +241,18 @@ const SettingsModal: React.FC<{ isOpen: boolean, onClose: () => void, settings: 
                     </select>
                 </div>
                 
+                <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                    <label className="text-xs font-bold text-blue-600 mb-1 block">GOOGLE GEMINI API KEY</label>
+                    <input 
+                        className="w-full border p-2 rounded bg-white text-sm" 
+                        type="password"
+                        placeholder="AIzaSy..." 
+                        value={s.apiKey || ''} 
+                        onChange={e=>setS({...s,apiKey:e.target.value})}
+                    />
+                    <p className="text-[10px] text-blue-400 mt-1">Insira aqui se não conseguir usar o arquivo .env</p>
+                </div>
+
                 <div className="pt-4 border-t"><h4 className="font-bold text-xs uppercase mb-2">Ciclo Padrão (Dias)</h4><div className="grid grid-cols-3 gap-2">
                     <div><label className="text-[10px]">Prop</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyOwner} onChange={e => setS({...s, defaultFrequencyOwner: Number(e.target.value)})}/></div>
                     <div><label className="text-[10px]">Const</label><input type="number" className="w-full border p-1 rounded" value={s.defaultFrequencyBuilder} onChange={e => setS({...s, defaultFrequencyBuilder: Number(e.target.value)})}/></div>
