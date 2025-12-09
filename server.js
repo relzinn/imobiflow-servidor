@@ -422,30 +422,39 @@ app.get('/whatsapp-contacts', async (req, res) => {
         
         console.log(`📥 Importando ${chats.length} chats...`);
 
-        // Limita a 500 chats mais recentes para não travar a importação se tiver milhares
+        // OTIMIZAÇÃO: Busca todos os contatos salvos de uma vez para mapear nomes
+        // Isso evita o erro "getIsMyContact" ao buscar um por um
+        let addressBook = new Map();
+        try {
+            const savedContacts = await client.getContacts();
+            savedContacts.forEach(contact => {
+               if (contact.id.user && (contact.name || contact.pushname)) {
+                   addressBook.set(contact.id.user, contact.name || contact.pushname);
+               }
+            });
+            console.log(`📖 Agenda sincronizada: ${addressBook.size} contatos encontrados.`);
+        } catch (err) {
+            console.warn("⚠️ Falha ao sincronizar agenda completa (usando nomes dos chats).");
+        }
+
         const recentChats = chats.slice(0, 500);
 
         for(const c of recentChats) {
             if(!c.isGroup && !seen.has(c.id.user)) {
                 seen.add(c.id.user);
                 
-                // Prioridade 1: Nome da conversa (que vem do cache/lista)
-                let displayName = c.name;
-                
-                // Tenta buscar o nome real do contato se possível, mas com fallback seguro
-                try {
-                    // O erro "window.Store.ContactMethods.getIsMyContact is not a function" acontece aqui.
-                    // Se falhar, ignoramos e mantemos o 'displayName' que já temos.
-                    const contact = await c.getContact();
-                    if (contact) {
-                        displayName = contact.name || contact.pushname || contact.shortName || displayName || c.id.user;
-                    }
-                } catch (e) {
-                    console.warn(`⚠️ Não foi possível detalhar contato ${c.id.user} (Bug WhatsApp Web), usando nome do chat: ${displayName}`);
-                }
+                // Lógica de Nome:
+                // 1. Agenda do Celular (via getContacts map)
+                // 2. Nome da Conversa (c.name)
+                // 3. Número
 
-                // Se ainda não tiver nome, usa o número
-                if (!displayName) displayName = c.id.user;
+                const savedName = addressBook.get(c.id.user);
+                let displayName = savedName || c.name || c.id.user;
+                
+                // Fallback para formatar número se não tiver nome nenhum
+                if (!displayName || displayName === c.id.user) {
+                    displayName = `+${c.id.user}`;
+                }
 
                 unique.push({ 
                     name: displayName, 
