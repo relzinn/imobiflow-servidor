@@ -185,9 +185,10 @@ export const ContactModal: React.FC<ContactModalProps> = ({ isOpen, onClose, onS
             <div className="bg-slate-50 p-3 rounded border border-slate-200 space-y-3">
                 <h4 className="text-xs font-bold text-blue-600 uppercase">Dados do Imóvel</h4>
                 
+                {/* MOVIDO PARA O TOPO */}
                 <div>
-                    <label className="block text-[10px] font-bold text-gray-500 mb-1">Tipo do Imóvel</label>
-                    <input className="w-full border rounded p-2 text-sm" placeholder="Ex: Apartamento, Casa, Terreno..." value={propertyType} onChange={e => setPropertyType(e.target.value)} />
+                    <label className="block text-[10px] font-bold text-gray-500 mb-1">Tipo do Imóvel (Escreva)</label>
+                    <input className="w-full border rounded p-2 text-sm" placeholder="Ex: Apartamento, Sobrado, Casa, Terreno..." value={propertyType} onChange={e => setPropertyType(e.target.value)} />
                 </div>
 
                 <div>

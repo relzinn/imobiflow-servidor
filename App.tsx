@@ -223,7 +223,7 @@ const ImportModal: React.FC<{ isOpen: boolean, onClose: () => void, serverUrl: s
                         {isOwner && (
                             <div className="bg-slate-50 p-2 border rounded">
                                 <label className="text-[10px] font-bold uppercase text-blue-600">Dados do Imóvel</label>
-                                <input className="w-full border p-2 rounded text-xs mb-2" placeholder="Tipo (Ex: Apto, Casa...)" value={reviewPropertyType} onChange={e=>setReviewPropertyType(e.target.value)}/>
+                                <input className="w-full border p-2 rounded text-xs mb-2" placeholder="Tipo (Ex: Apto, Casa, Terreno...)" value={reviewPropertyType} onChange={e=>setReviewPropertyType(e.target.value)}/>
                                 <input className="w-full border p-2 rounded text-xs mb-2" placeholder="Endereço/Condomínio" value={reviewPropertyAddr} onChange={e=>setReviewPropertyAddr(e.target.value)}/>
                                 <input className="w-full border p-2 rounded text-xs font-mono text-green-700" placeholder="R$ Valor" value={reviewPropertyValue} onChange={e=>{const v=e.target.value.replace(/\D/g,''); setReviewPropertyValue(formatCurrency(v))}}/>
                             </div>
@@ -364,7 +364,7 @@ const App: React.FC = () => {
   const getServerUrl = () => (localStorage.getItem('imobiflow_server_url') || 'https://followimob.squareweb.app').replace(/\/$/, '');
   const getHeaders = () => ({ 
       'Content-Type': 'application/json', 
-      'ngrok-skip-browser-warning': 'true',
+      'ngrok-skip-browser-warning': 'true', 
       'x-access-token': authToken
   });
 
@@ -634,8 +634,8 @@ const App: React.FC = () => {
                                             c.propertyAddress ? (
                                                 <div className="flex flex-col">
                                                     <span className="font-medium text-slate-700 truncate">
-                                                        {c.propertyType && <span className="font-bold text-slate-900 mr-1">{c.propertyType}:</span>}
-                                                        🏠 {c.propertyAddress}
+                                                        {c.propertyType && <span className="font-bold text-slate-900 mr-1 uppercase text-xs">{c.propertyType}</span>}
+                                                        - {c.propertyAddress}
                                                     </span>
                                                     {c.propertyValue && <span className="text-[11px] text-green-600 font-bold font-mono">{c.propertyValue}</span>}
                                                 </div>

@@ -429,18 +429,23 @@ app.get('/whatsapp-contacts', async (req, res) => {
             if(!c.isGroup && !seen.has(c.id.user)) {
                 seen.add(c.id.user);
                 
+                // Prioridade 1: Nome da conversa (que vem do cache/lista)
                 let displayName = c.name;
                 
-                // Tenta buscar o nome real do contato salvo na agenda
+                // Tenta buscar o nome real do contato se possível, mas com fallback seguro
                 try {
+                    // O erro "window.Store.ContactMethods.getIsMyContact is not a function" acontece aqui.
+                    // Se falhar, ignoramos e mantemos o 'displayName' que já temos.
                     const contact = await c.getContact();
                     if (contact) {
-                        // Prioridade: Nome na Agenda > Pushname (Nome Perfil) > Nome Formatado > Número
-                        displayName = contact.name || contact.pushname || contact.shortName || c.name || c.id.user;
+                        displayName = contact.name || contact.pushname || contact.shortName || displayName || c.id.user;
                     }
                 } catch (e) {
-                    console.log(`Erro ao buscar detalhes contato ${c.id.user}:`, e.message);
+                    console.warn(`⚠️ Não foi possível detalhar contato ${c.id.user} (Bug WhatsApp Web), usando nome do chat: ${displayName}`);
                 }
+
+                // Se ainda não tiver nome, usa o número
+                if (!displayName) displayName = c.id.user;
 
                 unique.push({ 
                     name: displayName, 
