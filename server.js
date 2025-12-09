@@ -119,9 +119,9 @@ async function generateAIMessage(contact, settings, stage = 0) {
 
     try {
         const ai = new GoogleGenAI({ apiKey: API_KEY });
-        const modelId = "gemini-2.5-flash"; // Modelo rápido e eficiente
+        const modelId = "gemini-2.5-flash"; 
 
-        const internalNotes = contact.notes ? `MOTIVO DO CONTATO (OBSERVAÇÃO REAL): "${contact.notes}"` : "Sem observações específicas (apenas follow-up de rotina).";
+        const internalNotes = contact.notes ? `MOTIVO/OBSERVAÇÃO DO CLIENTE: "${contact.notes}"` : "Sem observações específicas (apenas follow-up de rotina).";
 
         let context = "Retomada de contato.";
         if (stage === 1) context = "Cobrança amigável (sem resposta anterior).";
@@ -129,53 +129,62 @@ async function generateAIMessage(contact, settings, stage = 0) {
 
         const prompt = `
           Você é ${agent}, corretor da ${agency}.
-          Escreva uma mensagem de WhatsApp CURTA e DIRETA para ${contact.name} (${contact.type}).
+          Escreva uma mensagem de WhatsApp para ${contact.name} (${contact.type}).
           
-          DADOS REAIS DO CLIENTE:
+          CONTEXTO DO CLIENTE:
           ${internalNotes}
           
-          CONTEXTO: ${context}
+          OBJETIVO: ${context}
           
-          DIRETRIZES:
-          1. Use o tom "${tone}".
-          2. Comece com "Olá ${contact.name.split(' ')[0]}..." ou similar.
-          3. IMPORTANTE: Use a informação da "MOTIVO DO CONTATO" para criar a pergunta.
-          4. Se a observação diz "quer apto 3 quartos", pergunte sobre isso. Se diz "tem imóvel na rua X", fale disso.
-          5. NÃO INVENTE DADOS. Se não houver observação, seja genérico: "Gostaria de saber se ainda busca imóveis/venda".
-          6. MÁXIMO 2 ou 3 FRASES. Nada de textos longos.
+          REGRAS OBRIGATÓRIAS:
+          1. Use um tom ${tone}.
+          2. SE houver uma observação acima (como "procura apto" ou "imovel rua X"), VOCÊ DEVE MENCIONAR ISSO NA PERGUNTA. É proibido ignorar a observação.
+          3. Se não houver observação, pergunte genericamente se ainda busca imóveis.
+          4. Seja breve (máximo 3 linhas).
+          5. Não use hashtags.
         `;
 
         const response = await ai.models.generateContent({
             model: modelId,
-            contents: prompt,
+            contents: [
+                {
+                    role: 'user',
+                    parts: [{ text: prompt }]
+                }
+            ],
             config: {
-                temperature: 0.4, // Um pouco de criatividade, mas controlada
-                maxOutputTokens: 200,
+                temperature: 0.6,
+                // DESATIVA FILTROS DE SEGURANÇA QUE BLOQUEIAM VENDAS/IMÓVEIS
+                safetySettings: [
+                    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+                    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+                ]
             }
         });
         
-        const generatedText = response.text.trim();
+        const generatedText = response.text ? response.text.trim() : null;
         
-        // Validação simples para ver se a IA devolveu algo útil
-        if (generatedText.length > 5) {
-            console.log("✨ IA Gerou:", generatedText.substring(0, 50) + "...");
+        if (generatedText && generatedText.length > 5) {
+            console.log("✨ IA SUCESSO:", generatedText.substring(0, 50) + "...");
             return generatedText;
         } else {
-            throw new Error("Resposta da IA vazia ou muito curta.");
+            console.error("⚠️ Resposta IA vazia ou inválida.");
+            throw new Error("Resposta Vazia");
         }
 
     } catch (error) {
-        console.error("❌ FALHA NA GERAÇÃO IA:");
-        if (error.message.includes("403")) console.error("ERRO 403: Chave de API Inválida ou Expirada.");
-        else if (error.message.includes("404")) console.error("ERRO 404: Modelo 'gemini-2.5-flash' não encontrado ou sem acesso.");
-        else console.error(error.message);
+        console.error("❌ FALHA CRÍTICA IA:");
+        // Loga o erro completo para debug real
+        console.error(JSON.stringify(error, null, 2));
         
         return generateTemplateFallback(contact, settings, stage);
     }
 }
 
 function generateTemplateFallback(contact, settings, stage = 0) {
-    console.warn("⚠️ Usando Template Padrão (Fallback).");
+    console.warn("⚠️ Usando Template Padrão (Fallback Ativado).");
     const agent = settings.agentName || "Corretor";
     
     if (stage === 99) return `Olá ${contact.name}, encerro nosso contato por enquanto. Se precisar, estou à disposição!`;
