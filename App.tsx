@@ -435,7 +435,25 @@ const App: React.FC = () => {
   const handleSaveContact = async (contact: Contact) => { let newList; const exists = contacts.find(c => c.id === contact.id); if (exists) newList = contacts.map(c => c.id === contact.id ? contact : c); else newList = [...contacts, contact]; await persistContacts(newList); };
   const handleImportContacts = async (newContacts: Contact[]) => { const uniqueNew = newContacts.filter(nc => !contacts.some(oc => oc.phone === nc.phone)); await persistContacts([...contacts, ...uniqueNew]); setToast({ msg: `${uniqueNew.length} importados`, type: 'success' }); };
   const handleUpdateContact = (c: Contact) => { setEditingContact(c); setIsModalOpen(true); };
-  const handleFinalizeContact = async (c: Contact) => { await persistContacts(contacts.filter(x => x.id !== c.id)); setToast({ msg: 'Contato finalizado', type: 'success' }); };
+  
+  const handleFinalizeContact = async (c: Contact) => { 
+      // 1. Enviar mensagem de agradecimento
+      setToast({ msg: 'Enviando agradecimento...', type: 'success' });
+      try {
+          const farewellMsg = `Olá ${c.name}, agradeço o retorno! Vou encerrar nosso contato por aqui, mas fico à total disposição caso precise de algo no futuro. Abraço!`;
+          await fetch(`${settings!.serverUrl}/send`, { 
+              method: 'POST', 
+              headers: getHeaders(), 
+              body: JSON.stringify({ phone: c.phone, message: farewellMsg }) 
+          });
+      } catch (e) {
+          console.error("Erro ao enviar mensagem de agradecimento", e);
+      }
+
+      // 2. Remover o contato
+      await persistContacts(contacts.filter(x => x.id !== c.id)); 
+      setToast({ msg: 'Contato finalizado e mensagem enviada', type: 'success' }); 
+  };
   
   const handleDelete = async (id:string) => {
      await persistContacts(contacts.filter(c => c.id !== id));
@@ -699,14 +717,14 @@ const App: React.FC = () => {
                                                         onClick={() => { 
                                                             setConfirmData({
                                                                 show: true, 
-                                                                msg: 'Excluir contato permanentemente?', 
-                                                                action: () => handleDelete(c.id)
+                                                                msg: 'Enviar agradecimento e excluir contato?', 
+                                                                action: () => handleFinalizeContact(c)
                                                             }); 
                                                             setOpenMenuId(null); 
                                                         }} 
                                                         className="w-full text-left px-4 py-2 hover:bg-red-50 text-red-600 font-medium flex items-center gap-2"
                                                     >
-                                                        <Icons.Trash /> Excluir
+                                                        <Icons.Trash /> Finalizar
                                                     </button>
                                                 </div>
                                             )}
@@ -759,9 +777,15 @@ const App: React.FC = () => {
                                         "{c.lastReplyContent || 'Nova mensagem de áudio/mídia'}"
                                     </div>
                                     <div className="grid grid-cols-3 gap-2">
-                                        <button onClick={()=>{setIsInboxOpen(false);setChatContact(c);}} className="bg-green-50 text-green-700 py-2 rounded-lg text-xs font-bold hover:bg-green-100 transition-colors">Responder</button>
+                                        <button onClick={()=>{
+                                            setIsInboxOpen(false);
+                                            // Limpa a notificação de não lida ao abrir o chat
+                                            const updated = contacts.map(contact => contact.id === c.id ? { ...contact, hasUnreadReply: false } : contact);
+                                            persistContacts(updated);
+                                            setChatContact(c);
+                                        }} className="bg-green-50 text-green-700 py-2 rounded-lg text-xs font-bold hover:bg-green-100 transition-colors">Responder</button>
                                         <button onClick={()=>{setIsInboxOpen(false);handleUpdateContact(c);}} className="bg-blue-50 text-blue-700 py-2 rounded-lg text-xs font-bold hover:bg-blue-100 transition-colors">Atualizar</button>
-                                        <button onClick={()=>{setIsInboxOpen(false);setConfirmData({show:true,msg:'Finalizar e excluir este contato?',action:()=>handleFinalizeContact(c)})}} className="bg-red-50 text-red-700 py-2 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors">Finalizar</button>
+                                        <button onClick={()=>{setIsInboxOpen(false);setConfirmData({show:true,msg:'Enviar agradecimento e finalizar contato?',action:()=>handleFinalizeContact(c)})}} className="bg-red-50 text-red-700 py-2 rounded-lg text-xs font-bold hover:bg-red-100 transition-colors">Finalizar</button>
                                     </div>
                                 </div>
                             ))}
