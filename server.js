@@ -51,6 +51,14 @@ const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
+// Log de requisições para depuração
+app.use((req, res, next) => {
+    if (!req.path.endsWith('.js') && !req.path.endsWith('.css') && !req.path.endsWith('.ico')) {
+        console.log(`📡 REQ: ${req.method} ${req.path}`);
+    }
+    next();
+});
+
 // --- MIDDLEWARE DE COMPILAÇÃO JIT (JUST-IN-TIME) ---
 app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api/') || req.path === '/qr' || req.path === '/status' || req.path === '/auth-status' || req.path === '/login') return next();
@@ -96,6 +104,7 @@ const authMiddleware = (req, res, next) => {
     if (!settings.password) return next();
     if (token === settings.password) return next();
 
+    console.warn(`⛔ Acesso Negado (401) em ${req.path}. Token recebido: ${token ? 'SIM (Inválido)' : 'NÃO'}`);
     return res.status(401).json({ error: 'Unauthorized' });
 };
 
