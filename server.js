@@ -20,7 +20,7 @@ const { transform } = require('sucrase');
 
 console.log("✅ Dependências carregadas com sucesso.");
 
-const TEAM_GEMINI_API_KEY = process.env.API_KEY || "AIzaSy..."; 
+const TEAM_GEMINI_API_KEY = process.env.API_KEY;
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -100,8 +100,10 @@ async function generateAIMessage(contact, settings, stage = 0) {
     const agency = settings.agencyName || "nossa imobiliária";
     const tone = contact.messageTone || settings.messageTone || "Casual";
 
-    if (!TEAM_GEMINI_API_KEY || TEAM_GEMINI_API_KEY.length < 20 || TEAM_GEMINI_API_KEY.startsWith("AIzaSy...")) {
-        console.warn("⚠️ Chave API inválida ou padrão detectada. Usando Modo Template (Fallback).");
+    // CORREÇÃO: Removida a verificação 'startsWith("AIzaSy...")' que bloqueava chaves reais
+    // Agora verificamos apenas se a chave existe e tem um tamanho mínimo razoável
+    if (!TEAM_GEMINI_API_KEY || TEAM_GEMINI_API_KEY.length < 20) {
+        console.warn("⚠️ Chave API inválida ou não configurada no ambiente. Usando Modo Template (Fallback).");
         return generateTemplateFallback(contact, settings, stage);
     }
 
