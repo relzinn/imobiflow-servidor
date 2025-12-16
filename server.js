@@ -1,5 +1,3 @@
-
-
 require('dotenv').config(); // Carrega variáveis de ambiente do arquivo .env
 
 // ==================================================================================
@@ -315,7 +313,59 @@ async function runAutomationCycle() {
     const now = Date.now();
 
     for (let c of contacts) {
-        if (c.autoPilotEnabled === false || c.hasUnreadReply) continue;
+        if (c.autoPilotEnabled === false) continue;
+        
+        // =================================================================================
+        // 🚨 SYNC DE SEGURANÇA: Verifica se houve conversa real no WhatsApp recentemente 🚨
+        // =================================================================================
+        try {
+            const chatId = `${formatPhone(c.phone)}@c.us`;
+            // Tenta pegar o chat oficial do WhatsApp Web
+            const chat = await client.getChatById(chatId);
+            
+            if (chat && chat.timestamp) {
+                // chat.timestamp é em segundos, converte para ms
+                const waLastActivity = chat.timestamp * 1000;
+                const systemLastDate = new Date(c.lastContactDate || 0).getTime();
+                
+                // Se a data do WhatsApp for mais nova que a do sistema (com tolerância de 1 minuto)
+                // Significa que houve uma conversa (manual ou resposta) que o sistema não registrou ou é mais atual.
+                if (waLastActivity > systemLastDate + 60000) {
+                    console.log(`🔄 SYNC: Conversa mais recente detectada no WhatsApp para ${c.name}. Atualizando data e abortando envio.`);
+                    
+                    // Atualiza a data para a real do WhatsApp
+                    c.lastContactDate = new Date(waLastActivity).toISOString();
+                    
+                    // Reseta o estágio da automação, pois houve interação recente
+                    c.automationStage = 0;
+                    
+                    // Verifica se a última mensagem foi do cliente para marcar "Não lida" se necessário
+                    try {
+                        const lastMessages = await chat.fetchMessages({limit: 1});
+                        if (lastMessages && lastMessages.length > 0) {
+                            const lastMsg = lastMessages[lastMessages.length - 1];
+                            if (!lastMsg.fromMe) {
+                                c.hasUnreadReply = true;
+                                c.lastReplyContent = lastMsg.body;
+                                c.lastReplyTimestamp = waLastActivity;
+                            } else {
+                                // Se fui EU (corretor) que mandei msg manual pelo celular, limpa pendência
+                                c.hasUnreadReply = false;
+                            }
+                        }
+                    } catch(e) {}
+
+                    changed = true;
+                    // PULA O RESTO DO LOOP PARA ESTE CONTATO. O prazo agora conta da nova data.
+                    continue; 
+                }
+            }
+        } catch (err) {
+            // Se der erro ao buscar o chat (ex: chat não existe), segue o fluxo normal do sistema
+        }
+        // =================================================================================
+
+        if (c.hasUnreadReply) continue;
         
         let shouldSend = false;
         let stageToSend = 0;
