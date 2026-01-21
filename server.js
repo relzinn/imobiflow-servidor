@@ -53,14 +53,12 @@ const client = new Client({
         clientId: "imobiflow-v3",
         dataPath: './.wwebjs_auth'
     }),
-    // VERSÃO ESPECÍFICA PARA CORRIGIR 'markedUnread'
     webVersionCache: {
         type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1014711009-alpha.html',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
     },
     puppeteer: { 
         headless: true,
-        // Essencial para injetar scripts em ambientes restritos
         bypassCSP: true, 
         args: [
             '--no-sandbox', 
@@ -77,14 +75,14 @@ const client = new Client({
 client.on('qr', qr => { 
     clientStatus = 'qr_ready'; 
     qrcode.toDataURL(qr, (err, url) => { qrCodeData = url; }); 
-    console.log('📡 QR Code gerado.');
+    console.log('📡 Novo QR Code gerado.');
 });
 
 client.on('ready', () => { 
     isReady = true; 
     clientStatus = 'ready'; 
     qrCodeData = null; 
-    console.log('✅ WhatsApp Conectado e Estabilizado!'); 
+    console.log('✅ WhatsApp Conectado com sucesso (Branch Exodus)!'); 
 });
 
 client.on('disconnected', (reason) => { 
@@ -110,15 +108,23 @@ app.get('/sync-last-message/:phone', async (req, res) => {
         const numberId = await client.getNumberId(phone);
         if (!numberId) return res.json({ timestamp: null });
 
-        // Tenta obter o chat de forma segura para evitar instanciar propriedades inexistentes
+        // Validação defensiva do objeto chat antes de acessar qualquer propriedade
         const chat = await client.getChatById(numberId._serialized);
-        const messages = await chat.fetchMessages({ limit: 1 });
-        if (messages.length > 0) {
-            return res.json({ timestamp: messages[0].timestamp * 1000 });
+        
+        if (chat) {
+            // Em vez de sendSeen (antigo), algumas versões usam markSeen ou nada para evitar o erro
+            if (typeof chat.markSeen === 'function') {
+                try { await chat.markSeen(); } catch (e) {}
+            }
+
+            const messages = await chat.fetchMessages({ limit: 1 });
+            if (messages && messages.length > 0) {
+                return res.json({ timestamp: messages[0].timestamp * 1000 });
+            }
         }
         res.json({ timestamp: null });
     } catch (e) { 
-        console.error("Erro no sync:", e.message);
+        console.error("Erro defensivo no sync:", e.message);
         res.status(500).json({ error: e.message }); 
     }
 });
@@ -132,26 +138,25 @@ app.post('/send', async (req, res) => {
 
         const numberId = await client.getNumberId(phone);
         if (!numberId) {
-            return res.status(404).json({success:false, error: 'Número não registrado.'});
+            return res.status(404).json({success:false, error: 'Número não encontrado.'});
         }
 
-        // Envio direto é o método mais resiliente às mudanças de UI do WhatsApp
+        // Envio direto é o mais seguro contra erros de carregamento de chat
         const result = await client.sendMessage(numberId._serialized, req.body.message);
         
-        console.log(`✅ Sucesso para ${phone}`);
+        console.log(`✅ Mensagem enviada via Exodus para ${phone}`);
         res.json({success:true, id: result.id.id});
     } catch (e) { 
-        console.error(`❌ Falha no envio:`, e.message);
-        res.status(500).json({success:false, error: 'Protocolo recusado: ' + e.message}); 
+        console.error(`❌ Erro no envio:`, e.message);
+        res.status(500).json({success:false, error: 'Falha de comunicação: ' + e.message}); 
     }
 });
 
-// Inicialização com tratamento de contexto destruído
 client.initialize().catch(err => {
-    console.error("Erro inicial:", err.message);
-    if (err.message.includes('context was destroyed')) {
+    console.error("Falha ao iniciar:", err.message);
+    if (err.message.includes('destroyed')) {
         setTimeout(() => client.initialize().catch(() => {}), 10000);
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Servidor ImobiFlow Rodando na porta ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 ImobiFlow Servidor (Defensivo) Ativo na porta ${PORT}`));
