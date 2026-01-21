@@ -50,21 +50,21 @@ let qrCodeData = null;
 
 const client = new Client({
     authStrategy: new LocalAuth({ clientId: "imobiflow-v3" }),
-    // CORREÇÃO PARA O ERRO 'markedUnread': Força o uso de uma versão estável do WhatsApp Web
+    // CORREÇÃO SUGERIDA PELO USUÁRIO PARA 'markedUnread'
     webVersionCache: {
         type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/refs/heads/main/html/2.3000.1031490220-alpha.html',
     },
     puppeteer: { 
-        headless: true, 
+        headless: true, // Obrigatório true para Square Cloud
         args: [
             '--no-sandbox', 
             '--disable-setuid-sandbox', 
             '--disable-dev-shm-usage', 
             '--disable-gpu',
-            '--disable-extensions'
+            '--disable-extensions',
+            '--disable-popup-blocking'
         ],
-        // User agent atualizado para maior compatibilidade
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
 });
@@ -133,10 +133,8 @@ app.post('/send', async (req, res) => {
 
         console.log(`📤 Enviando via client.sendMessage para: ${numberId._serialized}`);
         
-        // Envio direto via client contornando a necessidade de instanciar o objeto Chat
-        const result = await client.sendMessage(numberId._serialized, req.body.message, {
-            linkPreview: false
-        });
+        // CORREÇÃO: Usar client.sendMessage DIRETAMENTE com a nova versão do cache
+        const result = await client.sendMessage(numberId._serialized, req.body.message);
         
         console.log(`✅ Mensagem enviada! ID: ${result.id.id}`);
         res.json({success:true});
