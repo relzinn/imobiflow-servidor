@@ -1,46 +1,61 @@
+import { GoogleGenAI } from "@google/genai";
 import { Contact, AppSettings } from "../types";
 
-// Agora o serviço é apenas um "carteiro" que pede para o servidor gerar a mensagem.
-// A chave API fica segura no servidor.
 export const generateFollowUpMessage = async (
   contact: Contact,
   settings: AppSettings,
   isNudge: boolean = false
 ): Promise<string> => {
+  // Verificação de segurança adicional
+  if (!settings) {
+    return `Olá ${contact.name}, gostaria de retomar nosso contato. Podemos falar?`;
+  }
+
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
-  const serverUrl = settings.serverUrl || 'http://localhost:3001';
-  // Recupera o token salvo no navegador para autenticar a requisição
-  const token = localStorage.getItem('imobiflow_auth') || '';
-  
+  const systemInstruction = `
+    Você é um corretor de imóveis sênior e atencioso chamado ${settings.agentName} da imobiliária ${settings.agencyName}.
+    Seu objetivo é escrever mensagens curtas, envolventes e profissionais para o WhatsApp.
+    O tom de voz deve ser ${contact.messageTone || settings.messageTone}.
+    
+    Diretrizes Importantes:
+    - Nunca use placeholders genéricos como "[NOME DO CLIENTE]". Use os dados reais fornecidos.
+    - Se "isNudge" for verdadeiro, a mensagem deve ser um reengajamento gentil para obter uma resposta pendente.
+    - Não inclua explicações ou aspas, retorne apenas o texto da mensagem.
+  `;
+
+  const prompt = `
+    Gere uma mensagem de acompanhamento para o seguinte contato:
+    Nome: ${contact.name}
+    Tipo: ${contact.type}
+    Notas/Preferências: ${contact.notes}
+    ${contact.propertyType ? `Interesse no imóvel: ${contact.propertyType}` : ''}
+    ${contact.propertyAddress ? `Localização: ${contact.propertyAddress}` : ''}
+    ${contact.propertyValue ? `Valor Pretendido: ${contact.propertyValue}` : ''}
+    ${contact.exchangeDescription ? `Possui permuta: ${contact.exchangeDescription} (Avaliada em: ${contact.exchangeValue})` : ''}
+    
+    Tipo de Follow-up: ${isNudge ? 'Cobrança de resposta amigável' : 'Acompanhamento periódico planejado'}.
+  `;
+
   try {
-      const response = await fetch(`${serverUrl}/generate-message`, {
-          method: 'POST',
-          headers: {
-              'Content-Type': 'application/json',
-              'ngrok-skip-browser-warning': 'true',
-              'x-access-token': token // ENVIA A SENHA PARA O SERVIDOR
-          },
-          body: JSON.stringify({
-              contact,
-              settings, // Passa as configurações de tom e nome
-              isNudge
-          })
-      });
+    const response = await ai.models.generateContent({
+      model: 'gemini-3-flash-preview',
+      contents: prompt,
+      config: {
+        systemInstruction: systemInstruction,
+        temperature: 0.7,
+      },
+    });
 
-      if (response.status === 401) {
-          throw new Error("Erro de Autenticação: Senha incorreta ou sessão expirada.");
-      }
-
-      if (!response.ok) {
-          throw new Error("Falha ao gerar mensagem no servidor");
-      }
-
-      const data = await response.json();
-      return data.message;
+    const generatedText = response.text;
+    if (generatedText) {
+      return generatedText.trim();
+    }
+    
+    throw new Error("Resposta da IA está vazia");
 
   } catch (error) {
-      console.error("Erro ao solicitar IA do servidor:", error);
-      // Fallback local simples caso servidor não responda ou erro de auth
-      return `Olá ${contact.name}, aqui é ${settings.agentName}. Gostaria de retomar nosso contato. Podemos falar?`;
+    console.error("Erro na geração Gemini:", error);
+    return `Olá ${contact.name}, tudo bem? Aqui é ${settings.agentName}. Estou passando para ver se você conseguiu analisar o que conversamos e se tem alguma dúvida. Aguardo seu retorno!`;
   }
 };
