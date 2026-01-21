@@ -50,9 +50,16 @@ const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 app.use(cors({ origin: '*' }));
 app.use(express.json());
 
-// Log de requisições para depuração
+// Log de requisições para depuração (COM FILTRO ANTI-LOOPING)
 app.use((req, res, next) => {
-    if (!req.path.endsWith('.js') && !req.path.endsWith('.css') && !req.path.endsWith('.ico')) {
+    // Lista de endpoints que são chamados automaticamente pelo frontend (polling)
+    // Ignoramos eles no log para não poluir o terminal
+    const quietEndpoints = ['/status', '/contacts', '/settings', '/qr', '/auth-status', '/whatsapp-contacts'];
+    
+    if (!req.path.endsWith('.js') && 
+        !req.path.endsWith('.css') && 
+        !req.path.endsWith('.ico') && 
+        !quietEndpoints.includes(req.path)) {
         console.log(`📡 REQ: ${req.method} ${req.path}`);
     }
     next();
@@ -331,7 +338,7 @@ async function runAutomationCycle() {
                 // Se a data do WhatsApp for mais nova que a do sistema (com tolerância de 1 minuto)
                 // Significa que houve uma conversa (manual ou resposta) que o sistema não registrou ou é mais atual.
                 if (waLastActivity > systemLastDate + 60000) {
-                    console.log(`🔄 SYNC: Conversa mais recente detectada no WhatsApp para ${c.name}. Atualizando data e abortando envio.`);
+                    console.log(`🔄 SYNC: Conversa mais recente detectada no WhatsApp para ${c.name}. Atualizando data e resetando ciclo.`);
                     
                     // Atualiza a data para a real do WhatsApp
                     c.lastContactDate = new Date(waLastActivity).toISOString();

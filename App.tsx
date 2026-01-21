@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { StrategyWizard } from './components/StrategyWizard';
 import { ContactModal } from './components/ContactModal';
@@ -437,8 +435,9 @@ const App: React.FC = () => {
   const handleUpdateContact = (c: Contact) => { setEditingContact(c); setIsModalOpen(true); };
   
   const handleFinalizeContact = async (c: Contact) => { 
-      // 1. Enviar mensagem de agradecimento
+      // 1. Enviar mensagem de agradecimento ANTES de excluir
       setToast({ msg: 'Enviando agradecimento...', type: 'success' });
+      
       try {
           const farewellMsg = `Olá ${c.name}, agradeço o retorno! Vou encerrar nosso contato por aqui, mas fico à total disposição caso precise de algo no futuro. Abraço!`;
           await fetch(`${settings!.serverUrl}/send`, { 
@@ -446,13 +445,15 @@ const App: React.FC = () => {
               headers: getHeaders(), 
               body: JSON.stringify({ phone: c.phone, message: farewellMsg }) 
           });
+          setToast({ msg: 'Mensagem enviada com sucesso', type: 'success' });
       } catch (e) {
           console.error("Erro ao enviar mensagem de agradecimento", e);
+          setToast({ msg: 'Erro ao enviar mensagem, mas finalizando...', type: 'error' });
       }
 
-      // 2. Remover o contato
+      // 2. Remover o contato da base
       await persistContacts(contacts.filter(x => x.id !== c.id)); 
-      setToast({ msg: 'Contato finalizado e mensagem enviada', type: 'success' }); 
+      setToast({ msg: 'Contato finalizado e removido', type: 'success' }); 
   };
   
   const handleDelete = async (id:string) => {
