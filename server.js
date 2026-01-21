@@ -528,4 +528,7 @@ app.get('/whatsapp-contacts', async (req, res) => {
 });
 
 client.initialize().catch(err => console.error("❌ Erro fatal:", err));
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Servidor rodando na porta ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Servidor rodando na porta ${PORT}`);
+    console.log(`🌐 Aguardando conexões da Square Cloud...`);
+});
