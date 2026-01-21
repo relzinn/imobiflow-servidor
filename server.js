@@ -118,16 +118,28 @@ app.post('/send', async (req, res) => {
             return res.status(404).json({success:false, error: 'Este número não está registrado no WhatsApp.'});
         }
 
-        console.log(`📤 Enviando via client.sendMessage para: ${numberId._serialized}`);
+        console.log(`📤 Enviando mensagem diretamente para JID: ${numberId._serialized}`);
         
-        // CORREÇÃO: Usar client.sendMessage diretamente evita o processamento interno do Chat que causa o erro 'markedUnread'
-        const result = await client.sendMessage(numberId._serialized, req.body.message);
+        // CORREÇÃO DEFINITIVA PARA 'markedUnread':
+        // 1. Usar client.sendMessage DIRETAMENTE (evita instanciar o objeto Chat que causa o erro).
+        // 2. Desativar linkPreview para evitar processamento de metadados que pode falhar em números novos.
+        const result = await client.sendMessage(numberId._serialized, req.body.message, { 
+            linkPreview: false 
+        });
         
         console.log(`✅ Mensagem enviada com sucesso! ID: ${result.id.id}`);
         res.json({success:true});
     } catch (e) { 
         console.error(`❌ Falha crítica no envio:`, e.message);
-        res.status(500).json({success:false, error: 'O WhatsApp recusou o envio (Erro de protocolo): ' + e.message}); 
+        // Fallback: Tenta enviar sem opções se a primeira falhar
+        try {
+            console.log("🔄 Tentando fallback simples...");
+            const fallbackResult = await client.sendMessage(req.body.phone.replace(/\D/g, '') + "@c.us", req.body.message);
+            console.log("✅ Fallback funcionou!");
+            return res.json({success:true});
+        } catch (e2) {
+            res.status(500).json({success:false, error: 'Erro de protocolo WhatsApp: ' + e.message}); 
+        }
     }
 });
 
