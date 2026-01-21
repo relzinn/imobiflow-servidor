@@ -1,6 +1,6 @@
 {
   "name": "imobiflow-crm",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "CRM e Automação para Corretores",
   "main": "server.js",
   "engines": {

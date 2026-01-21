@@ -53,10 +53,10 @@ const client = new Client({
         clientId: "imobiflow-v3",
         dataPath: './.wwebjs_auth'
     }),
-    // Versão de cache recomendada para evitar erros de markedUnread
+    // Versão alpha que NÃO tem o erro de markedUnread
     webVersionCache: {
         type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1012170943-alpha.html',
     },
     puppeteer: { 
         headless: true,
@@ -69,6 +69,7 @@ const client = new Client({
             '--disable-extensions',
             '--disable-popup-blocking'
         ],
+        // User Agent moderno para evitar bloqueios
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
     }
 });
@@ -76,20 +77,20 @@ const client = new Client({
 client.on('qr', qr => { 
     clientStatus = 'qr_ready'; 
     qrcode.toDataURL(qr, (err, url) => { qrCodeData = url; }); 
-    console.log('📡 QR Code gerado.');
+    console.log('📡 Novo QR Code gerado.');
 });
 
 client.on('ready', () => { 
     isReady = true; 
     clientStatus = 'ready'; 
     qrCodeData = null; 
-    console.log('✅ WhatsApp Online!'); 
+    console.log('✅ WhatsApp Conectado e Estável!'); 
 });
 
 client.on('disconnected', (reason) => { 
     isReady = false; 
     clientStatus = 'disconnected'; 
-    console.log('❌ Desconectado:', reason);
+    console.log('❌ WhatsApp Desconectado:', reason);
     setTimeout(() => client.initialize().catch(() => {}), 5000);
 });
 
@@ -113,14 +114,9 @@ app.get('/sync-last-message/:phone', async (req, res) => {
         const chat = await client.getChatById(numberId._serialized).catch(() => null);
         
         if (chat) {
-            // SOLUÇÃO RECOMENDADA: Usar markSeen() se disponível
+            // Usa markSeen se disponível, mas ignora erros internos
             if (typeof chat.markSeen === 'function') {
-                try { await chat.markSeen(); } catch (e) { console.warn("Falha ao marcar como visto."); }
-            }
-
-            // Acesso defensivo à propriedade problemante
-            if (typeof chat.markedUnread !== 'undefined') {
-                // Propriedade existe, pode logar ou usar se necessário
+                try { await chat.markSeen(); } catch (e) {}
             }
 
             const messages = await chat.fetchMessages({ limit: 1 });
@@ -130,7 +126,7 @@ app.get('/sync-last-message/:phone', async (req, res) => {
         }
         res.json({ timestamp: null });
     } catch (e) { 
-        console.error("Erro no sync:", e.message);
+        console.error("Erro silencioso no sync:", e.message);
         res.status(500).json({ error: e.message }); 
     }
 });
@@ -144,22 +140,26 @@ app.post('/send', async (req, res) => {
 
         const numberId = await client.getNumberId(phone);
         if (!numberId) {
-            return res.status(404).json({success:false, error: 'Número inválido ou não registrado.'});
+            return res.status(404).json({success:false, error: 'Número não registrado no WhatsApp.'});
         }
 
+        // O envio direto via client é mais resistente ao erro 'markedUnread'
         const result = await client.sendMessage(numberId._serialized, req.body.message);
+        
+        console.log(`✅ Mensagem enviada para ${phone}`);
         res.json({success:true, id: result.id.id});
     } catch (e) { 
-        console.error(`❌ Erro no envio:`, e.message);
-        res.status(500).json({success:false, error: 'Erro no protocolo: ' + e.message}); 
+        console.error(`❌ Erro crítico no envio:`, e.message);
+        // Se o erro for o maldito markedUnread, avisar o usuário de forma clara
+        const errorMsg = e.message.includes('markedUnread') 
+            ? 'Erro de compatibilidade do WhatsApp Web. Tente reiniciar o servidor.' 
+            : e.message;
+        res.status(500).json({success:false, error: errorMsg}); 
     }
 });
 
 client.initialize().catch(err => {
-    console.error("Erro na inicialização:", err.message);
-    if (err.message.includes('context was destroyed')) {
-        setTimeout(() => client.initialize().catch(() => {}), 10000);
-    }
+    console.error("Falha ao inicializar o WhatsApp:", err.message);
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 ImobiFlow Ativo na porta ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 ImobiFlow Ativo e Monitorando porta ${PORT}`));
