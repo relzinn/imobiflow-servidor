@@ -5,25 +5,15 @@ const qrcode = require('qrcode');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
-const { GoogleGenAI } = require("@google/genai");
 const { transform } = require('sucrase');
 
 const app = express();
-const PORT = process.env.PORT || 80; // Porta padrão Square Cloud
+const PORT = process.env.PORT || 80;
 const DB_FILE = path.join(__dirname, 'database.json');
 const SETTINGS_FILE = path.join(__dirname, 'settings.json');
 
 app.use(cors());
 app.use(express.json());
-
-// Logger inteligente: ignora requisições de status/qr para não poluir o terminal
-app.use((req, res, next) => {
-    const noisyPaths = ['/status', '/qr', '/auth-status'];
-    if (!noisyPaths.includes(req.path)) {
-        console.log(`📡 REQ: ${req.method} ${req.path}`);
-    }
-    next();
-});
 
 // --- MOTOR JIT COMPILER ---
 app.get('*', (req, res, next) => {
@@ -66,9 +56,25 @@ const client = new Client({
     }
 });
 
-client.on('qr', qr => { clientStatus = 'qr_ready'; qrcode.toDataURL(qr, (err, url) => { qrCodeData = url; }); });
-client.on('ready', () => { isReady = true; clientStatus = 'ready'; qrCodeData = null; console.log('✅ WhatsApp Conectado e Pronto!'); });
-client.on('disconnected', () => { isReady = false; clientStatus = 'disconnected'; client.initialize(); });
+client.on('qr', qr => { 
+    clientStatus = 'qr_ready'; 
+    qrcode.toDataURL(qr, (err, url) => { qrCodeData = url; }); 
+    console.log('📡 Novo QR Code gerado.');
+});
+
+client.on('ready', () => { 
+    isReady = true; 
+    clientStatus = 'ready'; 
+    qrCodeData = null; 
+    console.log('✅ WhatsApp Conectado!'); 
+});
+
+client.on('disconnected', (reason) => { 
+    isReady = false; 
+    clientStatus = 'disconnected'; 
+    console.log('❌ WhatsApp Desconectado:', reason);
+    client.initialize(); 
+});
 
 // --- ENDPOINTS ---
 app.get('/status', (req, res) => res.json({ status: clientStatus, isReady }));
@@ -80,9 +86,14 @@ app.get('/settings', (req, res) => res.json(getSettings()));
 app.get('/sync-last-message/:phone', async (req, res) => {
     if (!isReady) return res.status(503).json({ error: 'WhatsApp não conectado' });
     try {
-        const phone = req.params.phone.replace(/\D/g, '');
-        const chatId = `${phone.startsWith('55') ? phone : '55' + phone}@c.us`;
-        const chat = await client.getChatById(chatId);
+        let phone = req.params.phone.replace(/\D/g, '');
+        if (!phone.startsWith('55')) phone = '55' + phone;
+        
+        // Resolve o ID correto do contato no WhatsApp
+        const numberId = await client.getNumberId(phone);
+        if (!numberId) return res.json({ timestamp: null });
+
+        const chat = await client.getChatById(numberId._serialized);
         const messages = await chat.fetchMessages({ limit: 1 });
         if (messages.length > 0) {
             return res.json({ timestamp: messages[0].timestamp * 1000 });
@@ -92,14 +103,32 @@ app.get('/sync-last-message/:phone', async (req, res) => {
 });
 
 app.post('/send', async (req, res) => {
-    if (!isReady) return res.status(500).json({success:false, error: 'WhatsApp offline'});
+    if (!isReady) {
+        return res.status(503).json({success:false, error: 'WhatsApp não está conectado.'});
+    }
+    
     try {
-        const p = req.body.phone.replace(/\D/g, '');
-        const target = `${p.startsWith('55') ? p : '55'+p}@c.us`;
-        await client.sendMessage(target, req.body.message);
+        let phone = req.body.phone.replace(/\D/g, '');
+        if (!phone.startsWith('55')) phone = '55' + phone;
+
+        console.log(`🔍 Validando número: ${phone}`);
+        const numberId = await client.getNumberId(phone);
+
+        if (!numberId) {
+            console.error(`❌ Número ${phone} não possui WhatsApp ativo.`);
+            return res.status(404).json({success:false, error: 'Este número não está registrado no WhatsApp.'});
+        }
+
+        console.log(`📤 Enviando para JID: ${numberId._serialized}`);
+        const result = await client.sendMessage(numberId._serialized, req.body.message);
+        
+        console.log(`✅ Mensagem entregue! ID: ${result.id.id}`);
         res.json({success:true});
-    } catch (e) { res.status(500).json({success:false, error: e.message}); }
+    } catch (e) { 
+        console.error(`❌ Falha no envio:`, e.message);
+        res.status(500).json({success:false, error: 'O WhatsApp recusou o envio: ' + e.message}); 
+    }
 });
 
-client.initialize().catch(err => console.error("Erro na inicialização do WhatsApp:", err));
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 ImobiFlow Servidor na porta ${PORT}`));
+client.initialize().catch(err => console.error("Erro na inicialização:", err));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 ImobiFlow Servidor Rodando na porta ${PORT}`));
