@@ -119,8 +119,12 @@ app.post('/send', async (req, res) => {
             return res.status(404).json({success:false, error: 'Este número não está registrado no WhatsApp.'});
         }
 
-        console.log(`📤 Enviando para JID: ${numberId._serialized}`);
-        const result = await client.sendMessage(numberId._serialized, req.body.message);
+        console.log(`📤 Obtendo chat para JID: ${numberId._serialized}`);
+        // Busca o objeto do chat diretamente antes de enviar, para hidratar o estado interno da biblioteca
+        const chat = await client.getChatById(numberId._serialized);
+        
+        // Envia a mensagem forçando linkPreview: false, o que evita o erro 'markedUnread' em versões recentes do WA Web
+        const result = await chat.sendMessage(req.body.message, { linkPreview: false });
         
         console.log(`✅ Mensagem entregue! ID: ${result.id.id}`);
         res.json({success:true});
