@@ -89,7 +89,6 @@ app.get('/sync-last-message/:phone', async (req, res) => {
         let phone = req.params.phone.replace(/\D/g, '');
         if (!phone.startsWith('55')) phone = '55' + phone;
         
-        // Resolve o ID correto do contato no WhatsApp
         const numberId = await client.getNumberId(phone);
         if (!numberId) return res.json({ timestamp: null });
 
@@ -119,18 +118,16 @@ app.post('/send', async (req, res) => {
             return res.status(404).json({success:false, error: 'Este número não está registrado no WhatsApp.'});
         }
 
-        console.log(`📤 Obtendo chat para JID: ${numberId._serialized}`);
-        // Busca o objeto do chat diretamente antes de enviar, para hidratar o estado interno da biblioteca
-        const chat = await client.getChatById(numberId._serialized);
+        console.log(`📤 Enviando via client.sendMessage para: ${numberId._serialized}`);
         
-        // Envia a mensagem forçando linkPreview: false, o que evita o erro 'markedUnread' em versões recentes do WA Web
-        const result = await chat.sendMessage(req.body.message, { linkPreview: false });
+        // CORREÇÃO: Usar client.sendMessage diretamente evita o processamento interno do Chat que causa o erro 'markedUnread'
+        const result = await client.sendMessage(numberId._serialized, req.body.message);
         
-        console.log(`✅ Mensagem entregue! ID: ${result.id.id}`);
+        console.log(`✅ Mensagem enviada com sucesso! ID: ${result.id.id}`);
         res.json({success:true});
     } catch (e) { 
-        console.error(`❌ Falha no envio:`, e.message);
-        res.status(500).json({success:false, error: 'O WhatsApp recusou o envio: ' + e.message}); 
+        console.error(`❌ Falha crítica no envio:`, e.message);
+        res.status(500).json({success:false, error: 'O WhatsApp recusou o envio (Erro de protocolo): ' + e.message}); 
     }
 });
 
