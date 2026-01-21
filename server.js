@@ -53,13 +53,15 @@ const client = new Client({
         clientId: "imobiflow-v3",
         dataPath: './.wwebjs_auth'
     }),
-    // ESTA VERSÃO É A MAIS ESTÁVEL PARA EVITAR O ERRO 'markedUnread'
+    // VERSÃO ESPECÍFICA PARA CORRIGIR 'markedUnread'
     webVersionCache: {
         type: 'remote',
-        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+        remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.3000.1014711009-alpha.html',
     },
     puppeteer: { 
-        headless: true, 
+        headless: true,
+        // Essencial para injetar scripts em ambientes restritos
+        bypassCSP: true, 
         args: [
             '--no-sandbox', 
             '--disable-setuid-sandbox', 
@@ -68,7 +70,6 @@ const client = new Client({
             '--disable-extensions',
             '--disable-popup-blocking'
         ],
-        // User Agent atualizado para Chrome 122 (evita bloqueios e instabilidades)
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
     }
 });
@@ -76,21 +77,20 @@ const client = new Client({
 client.on('qr', qr => { 
     clientStatus = 'qr_ready'; 
     qrcode.toDataURL(qr, (err, url) => { qrCodeData = url; }); 
-    console.log('📡 Novo QR Code gerado.');
+    console.log('📡 QR Code gerado.');
 });
 
 client.on('ready', () => { 
     isReady = true; 
     clientStatus = 'ready'; 
     qrCodeData = null; 
-    console.log('✅ WhatsApp Conectado!'); 
+    console.log('✅ WhatsApp Conectado e Estabilizado!'); 
 });
 
 client.on('disconnected', (reason) => { 
     isReady = false; 
     clientStatus = 'disconnected'; 
     console.log('❌ WhatsApp Desconectado:', reason);
-    // Reinicializa com delay
     setTimeout(() => client.initialize().catch(() => {}), 5000);
 });
 
@@ -110,7 +110,7 @@ app.get('/sync-last-message/:phone', async (req, res) => {
         const numberId = await client.getNumberId(phone);
         if (!numberId) return res.json({ timestamp: null });
 
-        // Tenta obter o chat de forma segura
+        // Tenta obter o chat de forma segura para evitar instanciar propriedades inexistentes
         const chat = await client.getChatById(numberId._serialized);
         const messages = await chat.fetchMessages({ limit: 1 });
         if (messages.length > 0) {
@@ -132,26 +132,26 @@ app.post('/send', async (req, res) => {
 
         const numberId = await client.getNumberId(phone);
         if (!numberId) {
-            return res.status(404).json({success:false, error: 'Número não registrado no WhatsApp.'});
+            return res.status(404).json({success:false, error: 'Número não registrado.'});
         }
 
-        // O envio direto via client.sendMessage(jid, content) é o método que menos causa erro 'markedUnread'
+        // Envio direto é o método mais resiliente às mudanças de UI do WhatsApp
         const result = await client.sendMessage(numberId._serialized, req.body.message);
         
-        console.log(`✅ Mensagem enviada para ${phone}`);
+        console.log(`✅ Sucesso para ${phone}`);
         res.json({success:true, id: result.id.id});
     } catch (e) { 
-        console.error(`❌ Erro no envio:`, e.message);
-        res.status(500).json({success:false, error: 'Falha no protocolo WhatsApp: ' + e.message}); 
+        console.error(`❌ Falha no envio:`, e.message);
+        res.status(500).json({success:false, error: 'Protocolo recusado: ' + e.message}); 
     }
 });
 
-// Inicialização segura
+// Inicialização com tratamento de contexto destruído
 client.initialize().catch(err => {
-    console.error("Erro crítico na inicialização:", err.message);
-    if (err.message.includes('Execution context was destroyed')) {
+    console.error("Erro inicial:", err.message);
+    if (err.message.includes('context was destroyed')) {
         setTimeout(() => client.initialize().catch(() => {}), 10000);
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 ImobiFlow Servidor Online na porta ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Servidor ImobiFlow Rodando na porta ${PORT}`));
