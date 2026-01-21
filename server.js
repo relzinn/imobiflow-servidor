@@ -53,6 +53,7 @@ const client = new Client({
         clientId: "imobiflow-v3",
         dataPath: './.wwebjs_auth'
     }),
+    // Versão de cache recomendada para evitar erros de markedUnread
     webVersionCache: {
         type: 'remote',
         remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
@@ -75,20 +76,20 @@ const client = new Client({
 client.on('qr', qr => { 
     clientStatus = 'qr_ready'; 
     qrcode.toDataURL(qr, (err, url) => { qrCodeData = url; }); 
-    console.log('📡 Novo QR Code gerado.');
+    console.log('📡 QR Code gerado.');
 });
 
 client.on('ready', () => { 
     isReady = true; 
     clientStatus = 'ready'; 
     qrCodeData = null; 
-    console.log('✅ WhatsApp Conectado com sucesso (Branch Exodus)!'); 
+    console.log('✅ WhatsApp Online!'); 
 });
 
 client.on('disconnected', (reason) => { 
     isReady = false; 
     clientStatus = 'disconnected'; 
-    console.log('❌ WhatsApp Desconectado:', reason);
+    console.log('❌ Desconectado:', reason);
     setTimeout(() => client.initialize().catch(() => {}), 5000);
 });
 
@@ -108,13 +109,18 @@ app.get('/sync-last-message/:phone', async (req, res) => {
         const numberId = await client.getNumberId(phone);
         if (!numberId) return res.json({ timestamp: null });
 
-        // Validação defensiva do objeto chat antes de acessar qualquer propriedade
-        const chat = await client.getChatById(numberId._serialized);
+        // Tenta obter o chat de forma segura
+        const chat = await client.getChatById(numberId._serialized).catch(() => null);
         
         if (chat) {
-            // Em vez de sendSeen (antigo), algumas versões usam markSeen ou nada para evitar o erro
+            // SOLUÇÃO RECOMENDADA: Usar markSeen() se disponível
             if (typeof chat.markSeen === 'function') {
-                try { await chat.markSeen(); } catch (e) {}
+                try { await chat.markSeen(); } catch (e) { console.warn("Falha ao marcar como visto."); }
+            }
+
+            // Acesso defensivo à propriedade problemante
+            if (typeof chat.markedUnread !== 'undefined') {
+                // Propriedade existe, pode logar ou usar se necessário
             }
 
             const messages = await chat.fetchMessages({ limit: 1 });
@@ -124,7 +130,7 @@ app.get('/sync-last-message/:phone', async (req, res) => {
         }
         res.json({ timestamp: null });
     } catch (e) { 
-        console.error("Erro defensivo no sync:", e.message);
+        console.error("Erro no sync:", e.message);
         res.status(500).json({ error: e.message }); 
     }
 });
@@ -138,25 +144,22 @@ app.post('/send', async (req, res) => {
 
         const numberId = await client.getNumberId(phone);
         if (!numberId) {
-            return res.status(404).json({success:false, error: 'Número não encontrado.'});
+            return res.status(404).json({success:false, error: 'Número inválido ou não registrado.'});
         }
 
-        // Envio direto é o mais seguro contra erros de carregamento de chat
         const result = await client.sendMessage(numberId._serialized, req.body.message);
-        
-        console.log(`✅ Mensagem enviada via Exodus para ${phone}`);
         res.json({success:true, id: result.id.id});
     } catch (e) { 
         console.error(`❌ Erro no envio:`, e.message);
-        res.status(500).json({success:false, error: 'Falha de comunicação: ' + e.message}); 
+        res.status(500).json({success:false, error: 'Erro no protocolo: ' + e.message}); 
     }
 });
 
 client.initialize().catch(err => {
-    console.error("Falha ao iniciar:", err.message);
-    if (err.message.includes('destroyed')) {
+    console.error("Erro na inicialização:", err.message);
+    if (err.message.includes('context was destroyed')) {
         setTimeout(() => client.initialize().catch(() => {}), 10000);
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`🚀 ImobiFlow Servidor (Defensivo) Ativo na porta ${PORT}`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 ImobiFlow Ativo na porta ${PORT}`));
