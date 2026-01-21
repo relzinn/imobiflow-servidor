@@ -38,27 +38,44 @@ app.use(express.json());
 // Log de requisições filtrado para não poluir
 app.use((req, res, next) => {
     const quietEndpoints = ['/status', '/contacts', '/settings', '/qr', '/auth-status', '/whatsapp-contacts'];
-    if (!quietEndpoints.includes(req.path)) {
+    if (!quietEndpoints.includes(req.path) && !req.path.includes('.')) {
         console.log(`📡 REQ: ${req.method} ${req.path}`);
     }
     next();
 });
 
-// --- COMPILAÇÃO JIT ---
+// --- MOTOR DE COMPILAÇÃO JIT (JUST-IN-TIME) ---
 app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api/') || req.path === '/qr' || req.path === '/status' || req.path === '/auth-status' || req.path === '/login' || req.path === '/recover-password') return next();
+    // Pula endpoints de API
+    const apiRoutes = ['/api/', '/qr', '/status', '/auth-status', '/login', '/recover-password', '/contacts', '/settings', '/send', '/generate-message', '/whatsapp-contacts'];
+    if (apiRoutes.some(route => req.path.startsWith(route))) return next();
+    
+    // Define o caminho do arquivo
     let filePath = path.join(__dirname, req.path === '/' ? 'index.html' : req.path);
+    
+    // Tenta resolver extensões automáticas (.tsx ou .ts)
     let exists = fs.existsSync(filePath) && fs.statSync(filePath).isFile();
     if (!exists && !req.path.includes('.')) {
-         if (fs.existsSync(filePath + '.tsx')) { filePath += '.tsx'; exists = true; }
+        if (fs.existsSync(filePath + '.tsx')) { filePath += '.tsx'; exists = true; }
+        else if (fs.existsSync(filePath + '.ts')) { filePath += '.ts'; exists = true; }
     }
+
+    // Se for um arquivo de script, compila e entrega
     if (exists && (filePath.endsWith('.tsx') || filePath.endsWith('.ts'))) {
         try {
             const content = fs.readFileSync(filePath, 'utf8');
-            const compiled = transform(content, { transforms: ['typescript', 'jsx'], jsxRuntime: 'classic' }).code;
+            const compiled = transform(content, { 
+                transforms: ['typescript', 'jsx'], 
+                jsxRuntime: 'classic',
+                production: false
+            }).code;
+
             res.setHeader('Content-Type', 'application/javascript');
             return res.send(compiled);
-        } catch (e) { return res.status(500).send(`console.error("${e.message}")`); }
+        } catch (e) { 
+            console.error(`❌ Erro ao compilar ${filePath}:`, e.message);
+            return res.status(500).send(`console.error("Erro JIT: ${e.message}")`); 
+        }
     }
     next();
 });
@@ -91,28 +108,18 @@ client.on('ready', () => { console.log('✅ WhatsApp Conectado e Pronto!'); isRe
 client.on('authenticated', () => { clientStatus = 'authenticated'; });
 client.on('disconnected', () => { isReady = false; clientStatus = 'disconnected'; client.initialize(); });
 
-// --- FUNÇÃO DE ENVIO REFORÇADA ---
+// --- FUNÇÃO DE ENVIO ---
 async function sendWpp(phone, msg) {
-    if (!isReady) {
-        console.error(`❌ Falha no envio: WhatsApp desconectado (Status: ${clientStatus})`);
-        return { success: false, error: 'WhatsApp Offline' };
-    }
+    if (!isReady) return { success: false, error: 'WhatsApp Offline' };
     try {
         let p = phone.replace(/\D/g, '');
         if ((p.length === 10 || p.length === 11) && !p.startsWith('55')) p = '55' + p;
-        
         const chatId = `${p}@c.us`;
-        console.log(`📤 Enviando para: ${chatId}...`);
-        
-        // Verifica se o número é válido no WA
         const numberId = await client.getNumberId(chatId);
         const target = numberId ? numberId._serialized : chatId;
-
         await client.sendMessage(target, msg);
-        console.log(`✅ Sucesso: Mensagem entregue para ${target}`);
         return { success: true };
     } catch (e) {
-        console.error(`❌ Erro técnico no envio:`, e.message);
         return { success: false, error: e.message };
     }
 }
@@ -124,7 +131,6 @@ app.get('/contacts', (req, res) => res.json(getContacts()));
 app.post('/contacts', (req, res) => { saveContacts(req.body); res.json({success:true}); });
 app.get('/settings', (req, res) => res.json(getSettings()));
 app.post('/settings', (req, res) => { saveSettings(req.body); res.json({success:true}); });
-
 app.post('/send', async (req, res) => { 
     const result = await sendWpp(req.body.phone, req.body.message); 
     if (result.success) return res.json({success:true});
